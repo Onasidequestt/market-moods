@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0a0610">
 <title>Market Moods</title>
-<meta name="description" content="A moving picture of the mood of the US stock market: the Dow, S&P 500, Nasdaq and Russell 2000 as lava.">
+<meta name="description" content="A moving picture of the mood of the US stock market: the Dow, S&P 500, Nasdaq and Russell 2000 as lava, with the S&P 500's companies inside.">
 <style>
   :root {
     --bg: #0a0610;
@@ -22,7 +22,11 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
     font: 15px/1.35 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased; }
-  canvas#lamp { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  canvas#lamp, canvas#cell { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  canvas#cell { pointer-events: none; }
+  body.incell canvas#lamp { visibility: hidden; }
+  body.incell canvas#cell { pointer-events: auto; }
+  body.incell .mood, body.incell .tags, body.incell .readouts { display: none; }
   .chrome { position: fixed; inset: 0; pointer-events: none; transition: opacity .6s ease; }
   body.bare .chrome { opacity: 0; }
   body.bare .chrome * { pointer-events: none !important; }
@@ -57,6 +61,30 @@
   .mood .key .short { display: none; }
   .mood .key { margin: 6px auto 0; padding: 0 16px; font-size: 12px; color: var(--ink-3); max-width: 560px; }
   .tags { position: fixed; inset: 0; pointer-events: none; }
+  .tags span.door { pointer-events: auto; cursor: pointer; }
+  .cellcap { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; display: none; }
+  body.incell .cellcap { display: block; }
+  .cellcap .word { font-size: clamp(30px, 5.4vw, 58px); font-weight: 200; letter-spacing: -.02em; line-height: 1.05;
+    text-shadow: 0 2px 30px rgba(0, 0, 0, .5); }
+  .cellcap .sub { margin-top: 10px; font-size: 13px; color: var(--ink-2); letter-spacing: .02em; padding: 0 16px; }
+  .cellcap .key { margin: 6px auto 0; padding: 0 16px; font-size: 12px; color: var(--ink-3); max-width: 620px; }
+  .cellcap .key .short { display: none; }
+  .cellctl { display: none; gap: 8px 16px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+  body.incell .cellctl { display: flex; }
+  .seg { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .seg .lbl2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-right: 2px; }
+  .btn.opt { height: 28px; padding: 0 11px; font-size: 12px; color: var(--ink-2); }
+  .btn.opt[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-color: var(--ink); }
+  .tip { position: fixed; z-index: 2; pointer-events: none; background: rgba(18, 11, 24, .92); border: 1px solid var(--line);
+    border-radius: 12px; padding: 8px 11px; font-size: 12.5px; color: var(--ink-2); max-width: 240px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 8px 30px rgba(0, 0, 0, .5); }
+  .tip b { color: var(--ink); font-weight: 600; }
+  .tip[hidden] { display: none; }
+  .idx .look { display: none; appearance: none; border: 1px solid rgba(244, 236, 247, .32); background: rgba(244, 236, 247, .08);
+    border-radius: 999px; padding: 3px 10px; margin-top: 6px; font: inherit; font-size: 12px; color: var(--ink); cursor: pointer; min-height: 26px; }
+  .idx .look:hover { background: rgba(244, 236, 247, .16); }
+  .idx.hasdoor .look { display: inline; }
+  .idx.hasdoor { cursor: pointer; }
   .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink-2); white-space: nowrap; transition: bottom .25s linear; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
 
@@ -104,6 +132,7 @@
     .idx .lvl { font-size: 10.5px; }
     .idx .name { font-size: 11px; gap: 5px; }
     .idx .chop { display: none; }
+    .idx .look { padding: 3px 8px; font-size: 11.5px; }
     .btn .lbl { display: none; }
     .mood { top: 12%; }
     .mood .key { font-size: 11px; }
@@ -112,11 +141,20 @@
     .idx .long { display: none; }
     .idx .short { display: inline; }
     .status { font-size: 11.5px; }
+    .cellcap { top: 12%; }
+    .cellcap .sub { font-size: 12px; }
+    .cellcap .key { font-size: 11px; }
+    .cellcap .key .long { display: none; }
+    .cellcap .key .short { display: inline; }
+    .cellctl { gap: 6px 12px; }
+    .btn.opt { padding: 0 9px; }
   }
 </style>
 </head>
 <body>
 <canvas id="lamp" aria-hidden="true"></canvas>
+<canvas id="cell" aria-hidden="true"></canvas>
+<div class="tip" id="tip" role="tooltip" hidden></div>
 
 <div class="chrome" id="chrome">
   <div class="tags" id="tags" aria-hidden="true"></div>
@@ -126,6 +164,7 @@
       <div class="status" id="status" role="status"><span class="dot"></span><span id="statusText">Loading market data…</span></div>
     </div>
     <div class="tools">
+      <button class="btn" id="backBtn" type="button" aria-label="Back to the lamp" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 2 4.5 8l6 6 1.4-1.4L7.3 8l4.6-4.6z"/></svg><span class="lbl">Back to the lamp</span></button>
       <button class="btn" id="helpBtn" type="button" aria-label="How to read it"><span aria-hidden="true">?</span><span class="lbl">How to read it</span></button>
       <button class="btn" id="fsBtn" type="button" aria-label="Full screen"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1h5v2H3v3H1zm9 0h5v5h-2V3h-3zM1 10h2v3h3v2H1zm12 0h2v5h-5v-2h3z"/></svg></button>
     </div>
@@ -137,9 +176,21 @@
     <div class="key"><span class="long">Colour = today's move · higher = up · bigger = bigger move · restless = choppy</span><span class="short">colour = move · high = up · big = big move · restless = choppy</span></div>
   </div>
 
+  <div class="cellcap" aria-live="polite">
+    <div class="word" id="cellWord">Inside the S&amp;P 500</div>
+    <div class="sub num" id="cellSub"></div>
+    <div class="key"><span class="long">Each blob is one company · colour = its move · higher = up · bigger = bigger company · restless = choppy · white ring = moving against the index</span><span class="short">one blob per company · colour = move · high = up · ring = against the index</span></div>
+  </div>
+
   <div class="notice" id="notice"></div>
 
   <footer>
+    <div class="cellctl" id="cellctl">
+      <span class="seg" role="group" aria-label="How many companies"><span class="lbl2">Show</span>
+        <button class="btn opt" type="button" data-top="50">Top 50</button><button class="btn opt" type="button" data-top="100">Top 100</button><button class="btn opt" type="button" data-top="500">All 500</button></span>
+      <span class="seg" role="group" aria-label="What blob size means"><span class="lbl2">Size</span>
+        <button class="btn opt" type="button" data-size="cap">Company value</button><button class="btn opt" type="button" data-size="move">Size of move</button></span>
+    </div>
     <div class="days" id="days" role="group" aria-label="Trading day to replay" hidden></div>
     <div class="timeline" id="timeline" hidden>
       <button class="btn" id="playBtn" type="button" aria-label="Pause replay"><svg viewBox="0 0 16 16" aria-hidden="true" id="playIcon"><path d="M4 2h3v12H4zm5 0h3v12H9z"/></svg></button>
@@ -161,10 +212,12 @@
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
+    <dt>Inside</dt><dd>The specks inside the S&amp;P 500 are its biggest companies. Tap the blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. A white ring marks a company moving against the index. "All 500" shows every member (a few companies have two share classes).</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
   <div class="ramp-l"><span>−1%</span><span>−0.5%</span><span>0</span><span>+0.5%</span><span>+1%</span></div>
   <p class="src" id="src">Data: index levels from Yahoo Finance, delayed. When the market is closed, the lamp replays a real trading day from the past week.</p>
+  <p class="src" id="src2" hidden></p>
   <button class="btn close" id="helpClose" type="button">Close</button>
 </dialog>
 
@@ -179,6 +232,7 @@
   const REPLAY_SECONDS = reduced ? 120 : 60;   // one whole trading day
   const HOLD_SECONDS = 4;                       // pause on the close before looping
   const SHORT = { dow: "Dow", sp500: "S&P 500", nasdaq: "Nasdaq", russell: "Russell" };
+  const CELL_KEY = "sp500";                     // the index whose companies ride inside it (companies.json)
   const DROPS = 5;                              // blobs per index: one core + four satellites
   const hex = c => "#" + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("");
   const fmtPct = p => (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(2) + "%";
@@ -199,6 +253,11 @@
       el.className = "idx";
       el.innerHTML = `<div class="name"><span class="chip"></span><span class="long"></span><span class="short"></span></div>
         <div class="pct num"></div><div class="lvl num"></div><div class="chop"></div>`;
+      if (ix.key === CELL_KEY) {
+        const b = document.createElement("button"); b.type = "button"; b.className = "look";
+        b.innerHTML = '<span class="long">Look inside ›</span><span class="short">Inside ›</span>';
+        el.appendChild(b); el.onclick = () => { if (comp) openCell(); };
+      }
       el.querySelector(".long").textContent = ix.name;
       el.querySelector(".short").textContent = SHORT[ix.key] || ix.name;
       box.appendChild(el);
@@ -221,7 +280,7 @@
         if (!Array.isArray(ix.sessions) || !ix.sessions.length) ix.sessions = [ix.latest];
       }
       data = d;
-      buildReadouts();
+      buildReadouts(); readoutDoors();
       const st = Mood.marketState(Date.now(), Math.max(...d.indexes.map(i => i.last_time)));
       const newMode = st.mode; stale = !!st.stale;
       // replay days = the dates all four indexes share; live always shows today
@@ -239,6 +298,7 @@
       $("timeline").hidden = mode !== "replay";
       $("days").hidden = mode !== "replay" || days.length < 2;   // before the first draw: it measures the footer
       step(0); ui(); if (gl) draw(); // numbers and lamp show at once, not after the first slow frames
+      if (!comp || mode === "live") loadCompanies();   // past days never change: fetch them once
       $("src").textContent = `Data: index levels from ${d.source.replace(/ \(delayed\)$/, "")}, delayed. Last fetched ${fmtET(d.generated_at, { weekday: "short", hour: "numeric", minute: "2-digit" })} ET. When the market is closed, the lamp replays a real trading day from the past week: pick one above the timeline.`;
     } catch (e) {
       if (!data) {
@@ -366,8 +426,9 @@
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     if (data && mode !== "none") step(dt);
-    if (gl && lanes.length) draw();
-    if ((uiT += dt) > 0.1 && data) { uiT = 0; ui(); }
+    if (gl && lanes.length && !inCell) draw();
+    if (lanes.length) { if (inCell) { cellStep(dt); cellDraw(); } else specksDraw(); }
+    if ((uiT += dt) > 0.1 && data) { uiT = 0; ui(); cellUi(); }
     requestAnimationFrame(frame);
   }
 
@@ -446,7 +507,9 @@
     const tags = $("tags");
     if (tags.children.length !== data.indexes.length) {
       tags.textContent = "";
-      data.indexes.forEach(ix => { const s = document.createElement("span"); s.textContent = SHORT[ix.key] || ix.name; tags.appendChild(s); });
+      data.indexes.forEach(ix => { const s = document.createElement("span"); s.textContent = SHORT[ix.key] || ix.name;
+        if (ix.key === CELL_KEY) { s.className = "door"; s.title = "Look inside"; s.onclick = e => { e.stopPropagation(); if (comp) openCell(); }; }
+        tags.appendChild(s); });
     }
     lanes.forEach((L, i) => { if (L.tagX == null) return; const s = tags.children[i];
       s.style.left = (L.tagX * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%";
@@ -465,6 +528,227 @@
     }
   }
 
+  // ---------- inside the S&P 500: one blob per member company ----------
+  // Same rules as the lamp, one level down: colour = the company's move, height = up floats /
+  // down sinks, motion = its own last hour's chop. Size = market value (or size of move).
+  const CELL_URL = "data/companies.json";
+  let comp = null, compErr = false, inCell = false, cellTop = 50, cellSize = "cap";
+  const cellNodes = new Map();                  // symbol -> node; positions persist across switches
+  const cv = $("cell"), cx2 = cv.getContext("2d");
+  let cvDpr = 1, cellG = null, specksN = 0;
+  function resizeCell() { cvDpr = Math.min(window.devicePixelRatio || 1, 2); cv.width = Math.round(innerWidth * cvDpr); cv.height = Math.round(innerHeight * cvDpr); }
+  addEventListener("resize", resizeCell); resizeCell();
+  const hashS = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 100003; return h / 100003; };
+  const fmtCap = v => v >= 1e12 ? "$" + (v / 1e12).toFixed(2) + "T" : "$" + Math.round(v / 1e9) + "B";
+  const rgba = (c, a) => `rgba(${c.map(v => Math.round(clampN(v, 0, 1) * 255)).join(",")},${a})`;
+
+  async function loadCompanies() {
+    try {
+      const r = await fetch(CELL_URL + "?t=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      if (!Array.isArray(d.companies) || !Array.isArray(d.sessions) || !d.sessions.length) throw new Error("incomplete companies");
+      if (comp && comp.generated_at === d.generated_at) return;
+      comp = d; compErr = false;
+      $("src2").textContent = `Companies: members from Wikipedia's list of S&P 500 companies; prices and market values from Yahoo Finance, delayed. Last fetched ${fmtET(d.generated_at, { weekday: "short", hour: "numeric", minute: "2-digit" })} ET.`;
+      $("src2").hidden = false;
+      const h = location.hash;
+      const t = (/top=(500|100|50)\b/.exec(h) || [])[1]; if (t) cellTop = +t;
+      if (/size=move/.test(h)) cellSize = "move";
+      if (/(^#|&)cell(&|$)/.test(h) && !inCell) openCell();
+    } catch (e) { if (!comp) compErr = true; console.warn("market-moods companies:", e.message); }
+    readoutDoors(); cellUi();
+    if (lanes.length) inCell ? cellDraw() : specksDraw();   // show at once, not on the next frame
+  }
+  function readoutDoors() { data && data.indexes.forEach(ix => ix.el && ix.el.classList.toggle("hasdoor", ix.key === CELL_KEY && !!comp)); }
+  const cellSession = () => comp && comp.sessions.find(x => x.date === curDay);
+  // the members drawn today: biggest first, only those priced that day (null = no data, not flat)
+  function cellMembers(S) {
+    const out = [];
+    const cap = cellTop >= 500 ? Infinity : cellTop;             // "All 500" = every member priced that day
+    for (let k = 0; k < comp.companies.length && out.length < cap; k++) if (S.m[k]) out.push({ c: comp.companies[k], m: S.m[k] });
+    return out;
+  }
+  const cellPos = S => Math.min(pos, S.t.length - 1);   // today's company file can trail the index by a fetch
+
+  function cellGeom() {
+    const top = document.querySelector(".cellcap").getBoundingClientRect().bottom + 14;
+    const foot = $("cellctl").getBoundingClientRect().top - 14;
+    const R = Math.max(40, Math.min((foot - top) / 2, innerWidth / 2 - 16));
+    return { cx: innerWidth / 2, cy: (top + foot) / 2, R };
+  }
+
+  function cellStep(dt) {
+    const S = cellSession(), g = cellG = cellGeom();
+    if (!S) { cellNodes.clear(); return; }
+    const p = cellPos(S), list = cellMembers(S), want = new Set(list.map(x => x.c.s));
+    for (const k of [...cellNodes.keys()]) if (!want.has(k)) cellNodes.delete(k);
+    const pcts = list.map(x => Mood.movePct(x.m, p));
+    const rr = Mood.radii(list.map((x, n) => cellSize === "cap" ? x.c.cap : Mood.size(pcts[n]) ** 2),
+                          g.R * 0.95, list.length > 150 ? 0.4 : 0.44);
+    const k = 1 - Math.exp(-dt * 2.5), fl = Math.floor(p), fresh = [];
+    list.forEach((x, n) => {
+      let N = cellNodes.get(x.c.s);
+      if (!N) { N = { s: x.c.s, seed: hashS(x.c.s), ph: hashS(x.c.s + "~") * 60, pct: pcts[n], col: Mood.colour(pcts[n]), r: rr[n] };
+                cellNodes.set(x.c.s, N); fresh.push(N); }
+      N.c = x.c; N.rawPct = pcts[n];
+      N.pct += (pcts[n] - N.pct) * k;
+      const col = Mood.colour(N.pct); for (let j = 0; j < 3; j++) N.col[j] += (col[j] - N.col[j]) * k;
+      N.r += (Math.max(1.7, rr[n]) - N.r) * k;
+      if (N.chopAt !== curDay + fl) { N.chop = Mood.choppiness(x.m.map(b => 1 + b / 1e4), fl); N.chopAt = curDay + fl; }
+      N.sp = Mood.speed(N.chop) * (reduced ? 0.4 : 1); N.ph += dt * N.sp;
+      const ty = g.cy - (Mood.heightIn(N.pct) - 0.5) * 2 * g.R * 0.8;
+      const hc = Math.sqrt(Math.max(0, g.R * g.R - (ty - g.cy) ** 2));
+      N.tx = g.cx + (N.seed - 0.5) * 2 * hc * 0.88; N.ty = ty;
+    });
+    const nodes = [...cellNodes.values()];
+    for (const N of fresh) { N.x = N.tx; N.y = N.ty; }
+    relax(nodes, g, fresh.length > 20 ? 240 : 8, fresh.length > 20 ? 0.08 : 0.03);
+  }
+  // push overlapping blobs apart (big ones give way less) and keep every blob inside the membrane
+  function relax(nodes, g, iters, pull) {
+    for (let it = 0; it < iters; it++) {
+      for (const N of nodes) { N.x += (N.tx - N.x) * pull; N.y += (N.ty - N.y) * pull; }
+      nodes.sort((p, q) => p.x - q.x);                              // sweep: only pairs close in x
+      let maxR = 0; for (const N of nodes) maxR = Math.max(maxR, N.r);
+      for (let a = 0; a < nodes.length; a++) {
+        const A = nodes[a];
+        for (let b = a + 1; b < nodes.length; b++) {
+          const B = nodes[b], dx = B.x - A.x, dy = B.y - A.y, min = A.r + B.r + 1;
+          if (dx > A.r + maxR + 1) break;
+          if (Math.abs(dx) >= min || Math.abs(dy) >= min) continue;
+          const d2 = dx * dx + dy * dy; if (d2 >= min * min) continue;
+          const d = Math.sqrt(d2) || 0.01, push = (min - d) / d, wa = B.r * B.r / (A.r * A.r + B.r * B.r);
+          A.x -= dx * push * wa; A.y -= dy * push * wa; B.x += dx * push * (1 - wa); B.y += dy * push * (1 - wa);
+        }
+      }
+      for (const N of nodes) {
+        const dx = N.x - g.cx, dy = N.y - g.cy, d = Math.hypot(dx, dy), lim = Math.max(0, g.R * 0.96 - N.r);
+        if (d > lim) { N.x = g.cx + dx / d * lim; N.y = g.cy + dy / d * lim; }
+      }
+    }
+  }
+
+  function cellDraw() {
+    const g = cellG || cellGeom(), L = lanes[1], ctx = cx2;
+    ctx.setTransform(cvDpr, 0, 0, cvDpr, 0, 0);
+    const bg = ctx.createLinearGradient(0, 0, 0, innerHeight);
+    bg.addColorStop(0, "rgb(9,5,14)"); bg.addColorStop(1, "rgb(18,9,20)");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, innerWidth, innerHeight);
+    // the membrane = the S&P 500 itself: its colour, and it breathes with its own chop
+    const amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
+    ctx.beginPath();
+    for (let i = 0; i <= 96; i++) {
+      const th = i / 96 * Math.PI * 2;
+      const r = g.R * (1 + amp * (0.012 * Math.sin(3 * th + L.ph * 0.9) + 0.008 * Math.sin(5 * th - L.ph * 1.3)));
+      i ? ctx.lineTo(g.cx + r * Math.cos(th), g.cy + r * Math.sin(th)) : ctx.moveTo(g.cx + r * Math.cos(th), g.cy + r * Math.sin(th));
+    }
+    const fill = ctx.createRadialGradient(g.cx, g.cy - g.R * 0.3, g.R * 0.1, g.cx, g.cy, g.R);
+    fill.addColorStop(0, rgba(L.col, 0.2)); fill.addColorStop(1, rgba(L.col, 0.07));
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.lineWidth = 10; ctx.strokeStyle = rgba(L.col, 0.1); ctx.stroke();
+    ctx.lineWidth = 2; ctx.strokeStyle = rgba(L.col, 0.85); ctx.stroke();
+    let n = 0;
+    const nodes = [...cellNodes.values()].sort((a, b) => b.r - a.r);
+    for (const N of nodes) {
+      const a = (0.55 + 0.45 * Math.min(N.sp, 2.2)) * N.r * 0.12;           // restless = choppy
+      N.dx = N.x + Math.sin(N.ph * 1.7 + N.seed * 6.28) * a; N.dy = N.y + Math.cos(N.ph * 1.3 + N.seed * 9.1) * a;
+      ctx.beginPath(); ctx.arc(N.dx, N.dy, N.r, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(N.col, 1); ctx.fill();
+      if (N.r > 3) { ctx.lineWidth = 1; ctx.strokeStyle = "rgba(10,6,16,.45)"; ctx.stroke(); }
+      if (Mood.against(N.rawPct, L.rawPct)) {
+        ctx.beginPath(); ctx.arc(N.dx, N.dy, N.r + 1.6, 0, Math.PI * 2);
+        ctx.lineWidth = N.r > 6 ? 1.8 : 1.1; ctx.strokeStyle = "rgba(255,255,255,.88)"; ctx.stroke();
+      }
+      n++;
+    }
+    ctx.fillStyle = "rgba(20,11,24,.88)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const N of nodes) if (N.r >= 13) {                         // labels last: no small blob hides a name
+      ctx.font = `600 ${Math.min(14, Math.round(N.r * 0.5))}px ui-sans-serif, -apple-system, "Segoe UI", sans-serif`;
+      ctx.fillText(N.s, N.dx, N.dy);
+    }
+    cv.dataset.cell = `${Math.round(g.cx)},${Math.round(g.cy)},${Math.round(g.R)}`;   // read by browser-check.sh
+    cv.dataset.nodes = n;
+  }
+
+  // in the lamp: the S&P 500's biggest companies ride inside its blob as specks
+  function specksDraw() {
+    const ctx = cx2; ctx.setTransform(cvDpr, 0, 0, cvDpr, 0, 0); ctx.clearRect(0, 0, innerWidth, innerHeight);
+    specksN = 0;
+    const S = cellSession(); if (!S || !gl || mode === "none") { cv.dataset.specks = 0; return; }
+    const H = innerHeight, b = DROPS * 3;                       // lane 1 (S&P 500), drop 0 = its core
+    const X = balls[b] * H, Y = H - balls[b + 1] * H, R = balls[b + 2] * H;
+    if (R < 18) { cv.dataset.specks = 0; return; }
+    const p = cellPos(S), list = cellMembers({ m: S.m }).slice(0, 50), top = list.length ? list[0].c.cap : 1;
+    const L = lanes[1];
+    for (const x of list) {
+      const pct = Mood.movePct(x.m, p), sd = hashS(x.c.s);
+      const oy = -(Mood.heightIn(pct) - 0.5) * 2 * R * 0.55;
+      const ox = (sd - 0.5) * 2 * Math.sqrt(Math.max(0, (R * 0.7) ** 2 - oy * oy));
+      const w = Math.sin(L.ph * 1.3 + sd * 20) * R * 0.04;
+      const r = Math.max(1.3, R * 0.12 * Math.sqrt(x.c.cap / top));
+      cx2.beginPath(); cx2.arc(X + ox + w, Y + oy - w, r, 0, Math.PI * 2);
+      cx2.fillStyle = rgba(Mood.colour(pct), 1); cx2.fill();
+      cx2.lineWidth = 1; cx2.strokeStyle = "rgba(10,6,16,.6)"; cx2.stroke();
+      specksN++;
+    }
+    cv.dataset.specks = specksN;
+    cv.dataset.core = `${Math.round(X)},${Math.round(Y)},${Math.round(R)}`;   // read by browser-check.sh
+  }
+
+  function cellUi() {
+    document.querySelectorAll("#cellctl [data-top]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.top === cellTop));
+    document.querySelectorAll("#cellctl [data-size]").forEach(b => b.setAttribute("aria-pressed", b.dataset.size === cellSize));
+    if (!inCell || !data) return;
+    const S = comp && cellSession(), L = lanes[1], note = $("notice");
+    let msg = "";
+    if (compErr) msg = "Couldn't load the company data just now. It will try again with the next refresh.";
+    else if (!comp) msg = "Loading the S&P 500's companies…";
+    else if (!S) msg = mode === "live" ? "Today's company data hasn't arrived yet. It follows the index within a fetch or two."
+      : "No company data for " + dayLabel(curDay, { weekday: "long", month: "short", day: "numeric" }) + ". Pick another day below.";
+    note.textContent = msg; note.classList.toggle("on", !!msg);
+    if (!S || !L) { $("cellSub").textContent = "S&P 500 " + (L ? fmtPct(L.rawPct) : ""); cv.dataset.pos = ""; return; }
+    const p = cellPos(S), list = cellMembers(S);
+    let up = 0, ag = 0, big = null;
+    for (const x of list) { const q = Mood.movePct(x.m, p); if (q > 0) up++; if (Mood.against(q, L.rawPct)) { ag++; if (!big) big = [x.c, q]; } }
+    const behind = S.t.length - 1 < pos ? " · companies to " + fmtET(S.t[S.t.length - 1], { hour: "numeric", minute: "2-digit" }) + " ET" : "";
+    $("cellSub").textContent = `S&P 500 ${fmtPct(L.rawPct)} · ${up} of ${list.length} companies rising · ${ag} moving against it` +
+      (big ? ` (biggest: ${big[0].s} ${fmtPct(big[1])})` : "") + behind;
+    cv.dataset.pos = p.toFixed(4);                               // the moment the caption counts (browser-check.sh)
+  }
+
+  function openCell() {
+    if (inCell) return;
+    inCell = true; document.body.classList.add("incell"); document.body.classList.remove("bare");
+    $("backBtn").hidden = false; cellNodes.clear(); cellStep(0); cellDraw(); cellUi();
+  }
+  function closeCell() {
+    if (!inCell) return;
+    inCell = false; document.body.classList.remove("incell"); $("backBtn").hidden = true; $("tip").hidden = true;
+    $("notice").classList.remove("on");
+  }
+  function nodeAt(x, y) {
+    let best = null;
+    for (const N of cellNodes.values()) { const d = Math.hypot(x - N.dx, y - N.dy); if (d <= Math.max(N.r, 6) && (!best || N.r < best.r)) best = N; }
+    return best;
+  }
+  function showTip(N, x, y) {
+    const t = $("tip");
+    if (!N) { t.hidden = true; return; }
+    t.textContent = "";
+    const b = document.createElement("b"); b.textContent = N.c.n; t.appendChild(b);
+    t.append(" " + N.s, document.createElement("br"), fmtPct(N.rawPct) + " today · " + fmtCap(N.c.cap),
+             document.createElement("br"), N.c.sec + " · " + (N.chop == null ? "just opened" : Mood.chopWord(N.chop) + " last hour"));
+    t.hidden = false;
+    const w = t.offsetWidth, h = t.offsetHeight;
+    t.style.left = clampN(x + 14, 8, innerWidth - w - 8) + "px"; t.style.top = clampN(y - h - 12, 8, innerHeight - h - 8) + "px";
+  }
+  cv.addEventListener("pointermove", e => { if (inCell && e.pointerType === "mouse") showTip(nodeAt(e.clientX, e.clientY), e.clientX, e.clientY); });
+  cv.addEventListener("click", e => { if (inCell) showTip(nodeAt(e.clientX, e.clientY), e.clientX, e.clientY); });
+  $("backBtn").onclick = closeCell;
+  document.querySelectorAll("#cellctl [data-top]").forEach(b => b.onclick = () => { cellTop = +b.dataset.top; cellUi(); });
+  document.querySelectorAll("#cellctl [data-size]").forEach(b => b.onclick = () => { cellSize = b.dataset.size; cellUi(); });
+
   // ---------- controls ----------
   $("helpBtn").onclick = () => $("help").showModal();
   $("helpClose").onclick = () => $("help").close();
@@ -475,11 +759,16 @@
     $("playBtn").setAttribute("aria-label", paused ? "Play replay" : "Pause replay");
     $("playIcon").innerHTML = paused ? '<path d="M4 2l10 6-10 6z"/>' : '<path d="M4 2h3v12H4zm5 0h3v12H9z"/>';
   };
-  canvas.addEventListener("click", () => document.body.classList.toggle("bare"));
+  canvas.addEventListener("click", e => {
+    const H = innerHeight, b = DROPS * 3;
+    if (comp && lanes.length && Math.hypot(e.clientX - balls[b] * H, e.clientY - (H - balls[b + 1] * H)) < balls[b + 2] * H * 1.5) openCell();
+    else document.body.classList.toggle("bare");
+  });
   $("chrome").addEventListener("click", e => { if (e.target === $("chrome")) document.body.classList.toggle("bare"); });
   addEventListener("keydown", e => {
     if (e.target.closest && e.target.closest("dialog")) return;
-    if (e.key === "h") document.body.classList.toggle("bare");
+    if (e.key === "Escape" && inCell) closeCell();
+    else if (e.key === "h") document.body.classList.toggle("bare");
     else if (e.key === "?") $("help").showModal();
     else if (e.key === " " && mode === "replay") { e.preventDefault(); $("playBtn").click(); }
   });
@@ -493,7 +782,8 @@
   load();
   setInterval(load, REFRESH_MS);
   requestAnimationFrame(frame);
-  window.__mm = { get mode() { return mode; }, get pos() { return pos; }, lanes, get data() { return data; }, gl: !!gl };
+  window.__mm = { get mode() { return mode; }, get pos() { return pos; }, lanes, get data() { return data; }, gl: !!gl,
+                  get inCell() { return inCell; }, cellNodes };
 })();
 </script>
 </body>

@@ -3,6 +3,9 @@
 #  1. with data: status says live or replaying, four cards carry a % and a level,
 #     the mood word is set, and the lamp drew coloured wax (not just the dark background)
 #  2. without data: the honest "couldn't load" notice shows and NO wax is drawn
+#  3. inside the S&P 500 (#cell): the caption's counts (rising / against the index) match a
+#     count made HERE from the data files at the page's own moment; the blobs are really drawn;
+#     "All 500" shows every priced member; with no company file there is no door and no specks
 # usage: sh browser-check.sh     (serves this folder on 127.0.0.1:8766 while it runs)
 cd "$(dirname "$0")" || exit 2
 B="$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-152.0.7977.42/chrome-headless-shell-mac-arm64/chrome-headless-shell"
@@ -11,11 +14,21 @@ T=$(mktemp -d); mkdir -p "$T/nodata"; cp index.html mood.js "$T/nodata/"
 # a browser with no page fullscreen (iPhone Safari): same page with requestFullscreen removed
 mkdir -p "$T/nofs"; cp mood.js "$T/nofs/"
 sed 's|<head>|<head><script>Element.prototype.requestFullscreen = undefined;</script>|' index.html > "$T/nofs/index.html"
+# the index data but no company file: the inside view must not pretend
+mkdir -p "$T/nocomp/data"; cp index.html mood.js "$T/nocomp/"; cp data/market.json "$T/nocomp/data/"
+# the days the company file covers: its last day, and its worst S&P 500 day (a down day inside and out)
+read -r D_LAST D_DOWN <<EOF2
+$(python3 -c "
+import json; m=json.load(open('data/market.json')); c=json.load(open('data/companies.json'))
+sp=[i for i in m['indexes'] if i['key']=='sp500'][0]; ds=[x['date'] for x in c['sessions']]
+mv={x['date']:x['bars'][-1][1]/x['prev_close'] for x in sp['sessions'] if x['date'] in ds}
+print(ds[-1], min(mv, key=mv.get))")
+EOF2
 python3 -m http.server 8766 --bind 127.0.0.1 >/dev/null 2>&1 & SRV=$!
 trap 'kill $SRV 2>/dev/null; rm -rf "$T"' EXIT
 sleep 1
-ln -s "$T/nodata" ./.nodata-check 2>/dev/null; ln -s "$T/nofs" ./.nofs-check 2>/dev/null
-trap 'kill $SRV 2>/dev/null; rm -rf "$T"; rm -f ./.nodata-check ./.nofs-check' EXIT
+ln -s "$T/nodata" ./.nodata-check 2>/dev/null; ln -s "$T/nofs" ./.nofs-check 2>/dev/null; ln -s "$T/nocomp" ./.nocomp-check 2>/dev/null
+trap 'kill $SRV 2>/dev/null; rm -rf "$T"; rm -f ./.nodata-check ./.nofs-check ./.nocomp-check' EXIT
 shoot() { # $1 size  $2 url  $3 out
   P=$(mktemp -d)
   "$B" --headless --user-data-dir="$P" --use-angle=swiftshader --enable-unsafe-swiftshader --hide-scrollbars \
@@ -32,7 +45,10 @@ for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-21&at=15:55" "$T/up"
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-25&at=09:30" "$T/open"
   "$B" --headless --user-data-dir="$(mktemp -d)" --virtual-time-budget=3000 --dump-dom "http://127.0.0.1:8766/.nofs-check/" 2>/dev/null > "$T/nofs.html"
-  python3 - "$T" "$SIZE" <<'EOF' || RC=1
+  shoot $SIZE "http://127.0.0.1:8766/#cell&day=$D_LAST&at=12:10" "$T/cell"
+  shoot $SIZE "http://127.0.0.1:8766/#cell&top=500&day=$D_DOWN&at=15:00" "$T/cell500"
+  shoot $SIZE "http://127.0.0.1:8766/.nocomp-check/#cell&day=$D_LAST&at=12:10" "$T/nocomp"
+  python3 - "$T" "$SIZE" "$D_LAST" "$D_DOWN" <<'EOF' || RC=1
 import re, sys, html
 from PIL import Image
 t, size = sys.argv[1], sys.argv[2]
@@ -48,8 +64,9 @@ pcts = re.findall(r'class="pct num"[^>]*>([+−]\d+\.\d\d%)<', dom)
 lvls = re.findall(r'class="lvl num">([\d,]+\.\d\d)<', dom)
 if len(pcts) != 4 or len(lvls) != 4: bad.append(f"cards: {len(pcts)} pcts, {len(lvls)} levels")
 if not re.search(r'id="moodWord"[^>]*>(Fearful|Uneasy|Calm|Buoyant|Euphoric)<', dom): bad.append("no mood word")
-tags = re.findall(r'<span style="([^"]*)">(Dow|S&amp;P 500|Nasdaq|Russell)</span>', dom) + \
-       [("", n) for n in re.findall(r'<span>(Dow|S&amp;P 500|Nasdaq|Russell)</span>', dom)]
+tagsrc = (re.search(r'<div class="tags" id="tags"[^>]*>(.*?)</div>', dom, re.S) or [None, ""])[1]   # the blob labels only
+tags = [((re.search(r'style="([^"]*)"', a) or [None, ""])[1], n) for a, n in
+        re.findall(r'<span((?: (?:class|title|style)="[^"]*")*)>(Dow|S&amp;P 500|Nasdaq|Russell)</span>', tagsrc)]
 # a label is either positioned (inline left + visible) or still hidden by the .tags span rule
 hidden_default = re.search(r"\.tags span \{[^}]*visibility: hidden", dom) is not None
 stray = [n for st, n in tags if ("left:" not in st) and not (hidden_default and "visible" not in st)]
@@ -90,8 +107,74 @@ fs_ok = re.search(r'<button[^>]*id="fsBtn"[^>]*>', open(f"{t}/ok.html").read())
 fs_no = re.search(r'<button[^>]*id="fsBtn"[^>]*>', open(f"{t}/nofs.html").read())
 if not fs_ok or "hidden" in fs_ok[0]: bad.append("full-screen button hidden in a browser that supports it")
 if not fs_no or "hidden" not in fs_no[0]: bad.append("full-screen button shown where fullscreen is missing (dead button)")
+# ---- inside the S&P 500 ----
+import json, math
+mk = json.load(open("data/market.json")); co = json.load(open("data/companies.json"))
+sp = [i for i in mk["indexes"] if i["key"] == "sp500"][0]
+def expect(date, p, top):  # the caption's numbers, counted here from the files (not from the page)
+    ss = [x for x in sp["sessions"] if x["date"] == date][0]; b = ss["bars"]
+    i = min(max(int(p), 0), len(b) - 1); j = min(i + 1, len(b) - 1); f = min(max(p - i, 0), 1)
+    ipct = ((b[i][1] + (b[j][1] - b[i][1]) * f) / ss["prev_close"] - 1) * 100
+    S = [x for x in co["sessions"] if x["date"] == date][0]
+    rows = [r for r in S["m"] if r]; rows = rows if top >= 500 else rows[:top]
+    def q(r):
+        k = min(max(int(p), 0), len(r) - 1); l = min(k + 1, len(r) - 1); return (r[k] + (r[l] - r[k]) * min(max(p - k, 0), 1)) / 100
+    qs = [q(r) for r in rows]
+    agl = [k for k, x in enumerate(qs) if abs(x) >= .1 and abs(ipct) >= .1 and (x > 0) != (ipct > 0)]
+    names = [c["s"] for c, r in zip(co["companies"], S["m"]) if r]
+    return len(rows), sum(1 for x in qs if x > 0), len(agl), ipct, (names[agl[0]] if agl else None)
+def cell_check(nm, date, top):
+    dom = open(f"{t}/{nm}.html").read()
+    if 'class="incell"' not in dom: bad.append(f"{nm}: #cell link did not open the inside view"); return None
+    sub = re.search(r'id="cellSub">S&amp;P 500 ([+−])(\d+\.\d\d)% · (\d+) of (\d+) companies rising · (\d+) moving against it(?: \(biggest: ([A-Z.-]+) [+−][\d.]+%\))?<', dom)
+    pos = re.search(r'id="cell"[^>]*data-pos="([\d.]+)"', dom); geo = re.search(r'id="cell"[^>]*data-cell="(\d+),(\d+),(\d+)"', dom)
+    nodes = re.search(r'id="cell"[^>]*data-nodes="(\d+)"', dom)
+    if not (sub and pos and geo and nodes): bad.append(f"{nm}: caption/pos/geometry missing"); return None
+    n, up, ag, ipct, bigname = expect(date, float(pos[1]), top)
+    if sub[6] != bigname: bad.append(f"{nm}: caption names {sub[6]} as the biggest against the index; the files say {bigname}")
+    got = (int(sub[4]), int(sub[3]), int(sub[5]))
+    if got != (n, up, ag): bad.append(f"{nm}: caption says {got[1]} of {got[0]} rising, {got[2]} against; the files say {up} of {n}, {ag}")
+    sp_pct = float(sub[2]) * (-1 if sub[1] == "−" else 1)
+    if abs(sp_pct - ipct) > 0.011: bad.append(f"{nm}: S&P {sp_pct}% vs {ipct:.3f}% from the file")
+    if int(nodes[1]) != n: bad.append(f"{nm}: drew {nodes[1]} blobs, want {n}")
+    # the blobs are really painted: bright, saturated pixels inside the membrane (its fill is dim)
+    im = Image.open(f"{t}/{nm}.png").convert("RGB"); W, H = im.size; sc = H / int(size.split(",")[1])
+    cx, cy, R = (int(v) * sc for v in geo.groups()); px = im.load(); lit = tot = 0
+    for y in range(int(cy - R), int(cy + R), 3):
+        for x in range(int(cx - R), int(cx + R), 3):
+            if 0 <= x < W and 0 <= y < H and math.hypot(x - cx, y - cy) < R * 0.9:
+                tot += 1; r_, g_, b_ = px[x, y]
+                if max(r_, g_, b_) > 150 and max(r_, g_, b_) - min(r_, g_, b_) > 70: lit += 1
+    if lit < tot * 0.15: bad.append(f"{nm}: only {lit}/{tot} sampled pixels are wax inside the membrane")
+    return f"{nm} {got[1]}/{got[0]} up, {got[2]} against, {lit * 100 // max(tot, 1)}% lit"
+c1 = cell_check("cell", sys.argv[3], 50); c2 = cell_check("cell500", sys.argv[4], 500)
+if c2 and int(re.search(r"of (\d+) companies", open(f"{t}/cell500.html").read())[1]) <= 500 and \
+   sum(1 for r in [x for x in co["sessions"] if x["date"] == sys.argv[4]][0]["m"] if r) > 500:
+    bad.append("cell500: 'All 500' stopped at 500, not every priced member")
+okd = open(f"{t}/ok.html").read()
+if len(re.findall(r'class="idx hasdoor"', okd)) != 1: bad.append("the S&P 500 card has no 'Look inside' door (or more than one card does)")
+sk = re.search(r'id="cell"[^>]*data-specks="(\d+)"', okd)
+if not sk or int(sk[1]) != 50: bad.append(f"lamp: {sk and sk[1]} specks in the S&P 500 blob, want its 50 biggest companies")
+# ...and really painted: on an up day the S&P 500's wax is green, so warm (red/amber) pixels inside
+# its core are the falling companies' specks (on a down day: green pixels in red wax are the rising
+# ones). The page's own count above cannot prove that.
+sp_up = len(pcts) == 4 and pcts[1].startswith("+")
+core = re.search(r'id="cell"[^>]*data-core="(\d+),(\d+),(\d+)"', okd)
+im = Image.open(f"{t}/ok.png").convert("RGB"); W, H = im.size; sc = H / int(size.split(",")[1]); px = im.load(); warm = 0
+if core:
+    kx, ky, kr = (int(v) * sc for v in core.groups())
+    for y in range(int(ky - kr), int(ky + kr)):
+        for x in range(int(kx - kr), int(kx + kr)):
+            if 0 <= x < W and 0 <= y < H and math.hypot(x - kx, y - ky) < kr * 0.85:
+                r_, g_, b_ = px[x, y]
+                if (r_ > 150 and r_ - g_ > 60) if sp_up else (g_ > 150 and g_ - r_ > 60): warm += 1
+if warm < 12 * sc * sc: bad.append(f"lamp: {warm} against-colour pixels in the S&P 500 core: the companies' specks are not painted")
+ncd = open(f"{t}/nocomp.html").read()
+if 'class="idx hasdoor"' in ncd or 'class="incell"' in ncd: bad.append("no company file, yet the door/inside view shows")
+if re.search(r'data-specks="[1-9]', ncd): bad.append("no company file, yet specks are drawn (fake liveliness)")
+if wax(f"{t}/nocomp.png") < 400: bad.append("no company file broke the lamp itself")
 if bad: print(f"✘ browser-check {size}: " + "; ".join(bad)); sys.exit(1)
-print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp}")
+print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp} · {c1} · {c2}")
 EOF
 done
 exit $RC

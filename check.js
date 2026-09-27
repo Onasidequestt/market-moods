@@ -58,6 +58,19 @@ ok(M.marketState(et("2026-09-25T16:00:00"), sec("2026-09-25T15:55:00")).mode ===
 near(M.priceAt([[0, 100], [1, 110]], 0.5), 105, "halfway between bars");
 near(M.priceAt([[0, 100], [1, 110]], 7), 110, "past the end holds the close");
 
+// inside a blob: against, radii, member moves
+ok(M.against(-1.2, 0.5) && M.against(0.3, -0.2), "a company moving the other way is against its index");
+ok(!M.against(0.5, 0.5) && !M.against(-0.3, -1), "same direction is not against");
+ok(!M.against(-0.05, 0.8) && !M.against(-2, 0.05), "under 0.1% either side: not against (flat is not a direction)");
+const rr = M.radii([4, 1, 1], 10, 0.6);
+near(rr[0], 2 * rr[1], "area follows weight: 4x the value = 2x the radius");
+near(rr.reduce((a, r) => a + r * r, 0), 0.6 * 100, "the discs cover the asked share of the circle");
+ok(M.radii([0, 0], 10, 0.5).every(r => r === 0), "no weight, no wax");
+near(M.movePct([0, 100, 300], 1.5), 2, "member move glides between bars (basis points -> %)");
+near(M.movePct([0, 100], 9), 1, "past the end holds the last bar");
+near(M.heightIn(0), 0.5, "inside: flat mid-cell"); near(M.heightIn(2.5), 1, "inside: +2.5% at the top");
+near(M.heightIn(-1.25), 0.25, "inside: -1.25% a quarter up"); near(M.heightIn(-9), 0, "inside: clamps at the floor");
+
 // the data file the page reads
 const f = path.join(__dirname, "data", "market.json");
 const d = JSON.parse(fs.readFileSync(f, "utf8"));
@@ -82,4 +95,23 @@ for (const i of d.indexes) {
     ok(Math.abs(cur.prev_close / prev.bars[prev.bars.length - 1][1] - 1) < 0.003, `${i.key} ${cur.date}: prev_close follows ${prev.date}`);
   }
 }
+// the companies inside the S&P 500 blob (data/companies.json, written by fetch.py --companies)
+const cf = path.join(__dirname, "data", "companies.json");
+if (!fs.existsSync(cf)) { console.log("✘ companies.json missing: the inside view would show its honest empty state"); process.exit(1); }
+const co = JSON.parse(fs.readFileSync(cf, "utf8"));
+ok(co.index === "sp500" && co.companies.length >= 480, "companies: the S&P 500's ~503 members: " + co.companies.length);
+ok(co.companies.every((c, k) => c.s && c.n && c.sec && c.cap > 0 && (k === 0 || c.cap <= co.companies[k - 1].cap)), "companies biggest first, each named with a value");
+ok(new Set(co.companies.map(c => c.s)).size === co.companies.length, "no company twice");
+const sp = d.indexes.find(i => i.key === "sp500");
+const cdates = co.sessions.map(x => x.date);
+ok(cdates.every((x, k) => k === 0 || x > cdates[k - 1]), "company days oldest first: " + cdates);
+for (const S of co.sessions) {
+  ok(S.m.length === co.companies.length, S.date + ": one row per company");
+  ok(S.m.every(r => r === null || (r.length === S.t.length && r.every(v => Number.isInteger(v) && Math.abs(v) < 5000))), S.date + ": rows on the day's clock, whole bp, under 50%");
+  const same = sp.sessions.find(x => x.date === S.date);
+  // on the index's own clock (today's company file may trail the index by one fetch: a prefix)
+  if (same) ok(S.t.length <= same.bars.length && S.t.every((t, k) => t === same.bars[k][0]), S.date + ": company clock = the S&P 500's bar times");
+}
+const lastC = co.sessions[co.sessions.length - 1];
+ok(lastC.m.filter(Boolean).length >= 450, `${lastC.date}: at least 450 companies priced (${lastC.m.filter(Boolean).length})`);
 console.log(`✓ market-moods check: ${n} asserts`);

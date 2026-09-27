@@ -67,6 +67,28 @@
     return lerp(bars[i][1], bars[j][1], clamp(pos - i, 0, 1));
   }
 
-  const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt, TYPICAL_5M };
+  // inside a blob the same rule with a wider reach: a single company moves more than an index
+  // (half the S&P 500's members move over 1% on a normal day), so the top and bottom of the
+  // cell are a 2.5% move — at ±1% half of them would pile against the walls.
+  const heightIn = pct => 0.5 + 0.5 * clamp(pct / 2.5, -1, 1);
+  // inside a blob: a member company moving the other way from its index. Both must move at
+  // least 0.1% — on a flat day nothing is "against" anything.
+  const against = (pct, idxPct) => Math.abs(pct) >= 0.1 && Math.abs(idxPct) >= 0.1 && Math.sign(pct) !== Math.sign(idxPct);
+  // radii for weights (market value, or move) whose discs together cover `fill` of a circle of
+  // radius R: area follows the weight, so a company twice the value gets twice the wax.
+  function radii(weights, R, fill) {
+    const sum = weights.reduce((a, b) => a + b, 0);
+    if (!(sum > 0)) return weights.map(() => 0);
+    const k = Math.sqrt(fill * R * R / sum);
+    return weights.map(w => k * Math.sqrt(w));
+  }
+  // a member's move at a fractional bar position, from its basis-point series (see fetch.py)
+  function movePct(bp, pos) {
+    const i = clamp(Math.floor(pos), 0, bp.length - 1), j = Math.min(i + 1, bp.length - 1);
+    return lerp(bp[i], bp[j], clamp(pos - i, 0, 1)) / 100;
+  }
+
+  const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
+                against, radii, movePct, heightIn, TYPICAL_5M };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Mood = api;
 })(this);

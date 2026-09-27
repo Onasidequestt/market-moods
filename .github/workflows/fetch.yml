@@ -3,6 +3,9 @@
 # ponytail: GitHub cron is best-effort (runs can start 5-20 min late) and a scheduled workflow
 # pauses after 60 days without repo activity. Ceiling: a prototype's "delayed" promise.
 # Upgrade path: a fetcher on the client's own host (cron + licensed feed), page reads it there.
+# ponytail: data/companies.json (~800 KB, the S&P 500's members over five days) is re-committed on
+# each run, so the repo grows by roughly its compressed delta per run. Ceiling: a few months of a
+# prototype. Upgrade path: the same host fetcher, or squash the data history now and then.
 name: fetch market data
 on:
   schedule:
@@ -22,11 +25,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - run: python3 fetch.py --selfcheck && python3 fetch.py
+      # the companies are a second, slower source: if it fails the last good file stays and the
+      # index data still ships (the page says how far behind the companies are)
+      - run: python3 fetch.py --companies || echo "::warning::company fetch failed; keeping the last companies.json"
       - run: node check.js
       - run: |
-          git diff --quiet data/market.json && { echo "no change"; exit 0; }
+          git diff --quiet data/ && { echo "no change"; exit 0; }
           git config user.name "market-moods bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/market.json
+          git add data/market.json data/companies.json
           git commit -m "data: $(date -u +%FT%TZ)"
           git push
