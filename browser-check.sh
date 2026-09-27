@@ -8,11 +8,14 @@ cd "$(dirname "$0")" || exit 2
 B="$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-152.0.7977.42/chrome-headless-shell-mac-arm64/chrome-headless-shell"
 [ -x "$B" ] || { echo "✘ browser-check: chrome-headless-shell not found"; exit 2; }
 T=$(mktemp -d); mkdir -p "$T/nodata"; cp index.html mood.js "$T/nodata/"
+# a browser with no page fullscreen (iPhone Safari): same page with requestFullscreen removed
+mkdir -p "$T/nofs"; cp mood.js "$T/nofs/"
+sed 's|<head>|<head><script>Element.prototype.requestFullscreen = undefined;</script>|' index.html > "$T/nofs/index.html"
 python3 -m http.server 8766 --bind 127.0.0.1 >/dev/null 2>&1 & SRV=$!
 trap 'kill $SRV 2>/dev/null; rm -rf "$T"' EXIT
 sleep 1
-ln -s "$T/nodata" ./.nodata-check 2>/dev/null
-trap 'kill $SRV 2>/dev/null; rm -rf "$T"; rm -f ./.nodata-check' EXIT
+ln -s "$T/nodata" ./.nodata-check 2>/dev/null; ln -s "$T/nofs" ./.nofs-check 2>/dev/null
+trap 'kill $SRV 2>/dev/null; rm -rf "$T"; rm -f ./.nodata-check ./.nofs-check' EXIT
 shoot() { # $1 size  $2 url  $3 out
   P=$(mktemp -d)
   "$B" --headless --user-data-dir="$P" --use-angle=swiftshader --enable-unsafe-swiftshader --hide-scrollbars \
@@ -28,6 +31,7 @@ for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-23&at=15:55" "$T/down"
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-21&at=15:55" "$T/up"
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-25&at=09:30" "$T/open"
+  "$B" --headless --user-data-dir="$(mktemp -d)" --virtual-time-budget=3000 --dump-dom "http://127.0.0.1:8766/.nofs-check/" 2>/dev/null > "$T/nofs.html"
   python3 - "$T" "$SIZE" <<'EOF' || RC=1
 import re, sys, html
 from PIL import Image
@@ -81,6 +85,11 @@ for nm in ("ok", "down", "up"):
 # at the opening bell there is no hour to measure: each card says "just opened", never "just opened last hour"
 ch = re.findall(r'class="chop"[^>]*>([^<]*)<', re.sub(r"<script\b.*?</script>", "", open(f"{t}/open.html").read(), flags=re.S))
 if ch != ["just opened"] * 4: bad.append(f"opening-bell chop labels {ch}, want four 'just opened'")
+# the full-screen button shows where the browser can fill the screen, and is hidden where it can't
+fs_ok = re.search(r'<button[^>]*id="fsBtn"[^>]*>', open(f"{t}/ok.html").read())
+fs_no = re.search(r'<button[^>]*id="fsBtn"[^>]*>', open(f"{t}/nofs.html").read())
+if not fs_ok or "hidden" in fs_ok[0]: bad.append("full-screen button hidden in a browser that supports it")
+if not fs_no or "hidden" not in fs_no[0]: bad.append("full-screen button shown where fullscreen is missing (dead button)")
 if bad: print(f"✘ browser-check {size}: " + "; ".join(bad)); sys.exit(1)
 print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp}")
 EOF
