@@ -57,7 +57,7 @@
     const mins = et.getHours() * 60 + et.getMinutes(), day = et.getDay();
     const open = day >= 1 && day <= 5 && mins >= 570 && mins < 960;
     const ageMin = (nowMs / 1000 - lastTimeSec) / 60;
-    if (open && ageMin <= 45) return { mode: "live", open, ageMin };
+    if (open && ageMin <= 30) return { mode: "live", open, ageMin };   // the same 30 min the client is told
     return { mode: "replay", open, ageMin, stale: open };  // stale: open but the feed is behind
   }
 

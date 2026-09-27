@@ -50,6 +50,8 @@ ok(sat.mode === "replay" && !sat.stale, "Saturday = replay, not stale");
 const behind = M.marketState(et("2026-09-25T14:00:00"), sec("2026-09-25T12:00:00"));
 ok(behind.mode === "replay" && behind.stale, "open but 2h behind = replay, stale");
 ok(M.marketState(et("2026-09-25T09:29:00"), sec("2026-09-24T16:00:00")).mode === "replay", "9:29 is before the bell");
+ok(M.marketState(et("2026-09-25T14:00:00"), sec("2026-09-25T13:30:00")).mode === "live", "30 min old is still live");
+ok(M.marketState(et("2026-09-25T14:00:00"), sec("2026-09-25T13:29:00")).stale, "31 min old is behind, not live");
 ok(M.marketState(et("2026-09-25T16:00:00"), sec("2026-09-25T15:55:00")).mode === "replay", "4:00 is after the bell");
 
 // replay glides between closes
