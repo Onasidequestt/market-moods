@@ -27,6 +27,7 @@ for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8766/.nodata-check/" "$T/no"
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-23&at=15:55" "$T/down"
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-21&at=15:55" "$T/up"
+  shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-25&at=09:30" "$T/open"
   python3 - "$T" "$SIZE" <<'EOF' || RC=1
 import re, sys, html
 from PIL import Image
@@ -77,6 +78,9 @@ for nm in ("ok", "down", "up"):
     top, foot = int(m[1]), int(m[2])
     cw, fw = strip_wax(f"{t}/{nm}.png", top - 22, top), strip_wax(f"{t}/{nm}.png", foot, foot + 34)
     if cw > 30 or fw > 30: bad.append(f"{nm}: wax over the caption ({cw}px) or the footer ({fw}px)")
+# at the opening bell there is no hour to measure: each card says "just opened", never "just opened last hour"
+ch = re.findall(r'class="chop"[^>]*>([^<]*)<', re.sub(r"<script\b.*?</script>", "", open(f"{t}/open.html").read(), flags=re.S))
+if ch != ["just opened"] * 4: bad.append(f"opening-bell chop labels {ch}, want four 'just opened'")
 if bad: print(f"✘ browser-check {size}: " + "; ".join(bad)); sys.exit(1)
 print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp}")
 EOF
