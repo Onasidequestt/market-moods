@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0610">
+<title>Market Moods</title>
+<meta name="description" content="A moving picture of the mood of the US stock market: the Dow, S&P 500, Nasdaq and Russell 2000 as lava.">
+<style>
+  :root {
+    --bg: #0a0610;
+    --ink: #f4ecf7;
+    --ink-2: rgba(244, 236, 247, .66);
+    --ink-3: rgba(244, 236, 247, .42);
+    --glass: rgba(20, 12, 26, .55);
+    --line: rgba(244, 236, 247, .14);
+    --up: #5fe39e;
+    --down: #ff6b7a;
+    --flat: #ffb13b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font: 15px/1.35 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  canvas#lamp { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .chrome { position: fixed; inset: 0; pointer-events: none; transition: opacity .6s ease; }
+  body.bare .chrome { opacity: 0; }
+  body.bare .chrome * { pointer-events: none !important; }
+  .chrome > * { pointer-events: auto; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  header { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px; padding: max(16px, env(safe-area-inset-top)) 16px 0; pointer-events: none; }
+  header > * { pointer-events: auto; }
+  .brand { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .brand h1 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);
+    background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-width: 100%; }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .status.live .dot { background: var(--up); box-shadow: 0 0 0 0 rgba(95, 227, 158, .6); animation: pulse 2s infinite; }
+  .status.replay .dot { background: var(--flat); }
+  .status.error .dot { background: var(--down); }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(95, 227, 158, 0); } 100% { box-shadow: 0 0 0 0 rgba(95, 227, 158, 0); } }
+  .tools { display: flex; gap: 8px; }
+  .btn { appearance: none; border: 1px solid var(--line); background: var(--glass); color: var(--ink);
+    height: 34px; min-width: 34px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn:hover { border-color: rgba(244, 236, 247, .32); }
+  .btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .btn svg { width: 14px; height: 14px; fill: currentColor; }
+
+  .mood { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; }
+  .mood .word { font-size: clamp(38px, 7vw, 76px); font-weight: 200; letter-spacing: -.02em; line-height: 1;
+    text-shadow: 0 2px 30px rgba(0, 0, 0, .5); transition: color 1.2s ease; }
+  .mood .sub { margin-top: 10px; font-size: 13px; color: var(--ink-2); letter-spacing: .04em; }
+  .mood .key .short { display: none; }
+  .mood .key { margin: 6px auto 0; padding: 0 16px; font-size: 12px; color: var(--ink-3); max-width: 560px; }
+  .tags { position: fixed; inset: 0; pointer-events: none; }
+  .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-2); white-space: nowrap; transition: bottom .25s linear; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
+
+  footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+  .timeline { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .timeline .clock { font-size: 12.5px; color: var(--ink-2); min-width: 78px; }
+  .track { position: relative; flex: 1; height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ink-2); border-radius: 3px; }
+  .timeline .ends { font-size: 11px; color: var(--ink-3); }
+  .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .idx { background: var(--glass); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); min-width: 0; }
+  .idx .name { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .idx .short { display: none; }
+  .idx .chip { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--ink-3); }
+  .idx .pct { font-size: 22px; font-weight: 500; margin-top: 3px; letter-spacing: -.01em; }
+  .idx .lvl { font-size: 12px; color: var(--ink-2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .idx .chop { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+
+  .notice { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100% - 32px));
+    text-align: center; color: var(--ink-2); font-size: 15px; display: none; }
+  .notice.on { display: block; }
+
+  dialog { border: 1px solid var(--line); border-radius: 18px; background: rgba(18, 11, 24, .94); color: var(--ink);
+    width: min(520px, calc(100% - 32px)); padding: 22px 22px 18px; box-shadow: 0 20px 80px rgba(0, 0, 0, .6); }
+  dialog::backdrop { background: rgba(5, 2, 8, .55); backdrop-filter: blur(3px); }
+  dialog h2 { margin: 0 0 12px; font-size: 18px; font-weight: 600; }
+  dialog dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; font-size: 14px; }
+  dialog dt { color: var(--ink); font-weight: 600; }
+  dialog dd { margin: 0; color: var(--ink-2); }
+  .ramp { height: 10px; border-radius: 6px; margin: 14px 0 4px; }
+  .ramp-l { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); }
+  dialog .src { margin: 14px 0 0; font-size: 12px; color: var(--ink-3); }
+  dialog .close { margin-top: 16px; width: 100%; }
+
+  @media (max-width: 640px) {
+    .readouts { gap: 6px; }
+    .idx { padding: 8px 8px 9px; border-radius: 12px; }
+    .idx .pct { font-size: 16px; }
+    .idx .lvl { font-size: 10.5px; }
+    .idx .name { font-size: 11px; gap: 5px; }
+    .idx .chop { display: none; }
+    .btn .lbl { display: none; }
+    .mood { top: 12%; }
+    .mood .key { font-size: 11px; }
+    .mood .key .long { display: none; }
+    .mood .key .short { display: inline; }
+    .idx .long { display: none; }
+    .idx .short { display: inline; }
+    .status { font-size: 11.5px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="lamp" aria-hidden="true"></canvas>
+
+<div class="chrome" id="chrome">
+  <div class="tags" id="tags" aria-hidden="true"></div>
+  <header>
+    <div class="brand">
+      <h1>Market Moods</h1>
+      <div class="status" id="status" role="status"><span class="dot"></span><span id="statusText">Loading market data…</span></div>
+    </div>
+    <div class="tools">
+      <button class="btn" id="helpBtn" type="button" aria-label="How to read it"><span aria-hidden="true">?</span><span class="lbl">How to read it</span></button>
+      <button class="btn" id="fsBtn" type="button" aria-label="Full screen"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1h5v2H3v3H1zm9 0h5v5h-2V3h-3zM1 10h2v3h3v2H1zm12 0h2v5h-5v-2h3z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="mood" aria-live="polite">
+    <div class="word" id="moodWord"></div>
+    <div class="sub num" id="moodSub"></div>
+    <div class="key"><span class="long">Colour = today's move · higher = up · bigger = bigger move · restless = choppy</span><span class="short">colour = move · high = up · big = big move</span></div>
+  </div>
+
+  <div class="notice" id="notice"></div>
+
+  <footer>
+    <div class="timeline" id="timeline" hidden>
+      <button class="btn" id="playBtn" type="button" aria-label="Pause replay"><svg viewBox="0 0 16 16" aria-hidden="true" id="playIcon"><path d="M4 2h3v12H4zm5 0h3v12H9z"/></svg></button>
+      <span class="clock num" id="clock"></span>
+      <span class="ends">9:30</span>
+      <div class="track"><i id="progress"></i></div>
+      <span class="ends">4:00</span>
+    </div>
+    <div class="readouts" id="readouts"></div>
+  </footer>
+</div>
+
+<dialog id="help" aria-labelledby="helpTitle">
+  <h2 id="helpTitle">How to read it</h2>
+  <dl>
+    <dt>Blobs</dt><dd>One per index, left to right: Dow, S&amp;P 500, Nasdaq, Russell 2000. Each sits above its card.</dd>
+    <dt>Colour</dt><dd>Today's move from yesterday's close. Red is falling, amber is flat, green is rising.</dd>
+    <dt>Height</dt><dd>Rising indexes float up; falling ones sink. The top and bottom of the lamp are a 1% move.</dd>
+    <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
+    <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
+    <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
+  </dl>
+  <div class="ramp" id="ramp"></div>
+  <div class="ramp-l"><span>−1%</span><span>−0.5%</span><span>0</span><span>+0.5%</span><span>+1%</span></div>
+  <p class="src" id="src">Data: index levels from Yahoo Finance, delayed. When the market is closed, the lamp replays the last real trading day.</p>
+  <button class="btn close" id="helpClose" type="button">Close</button>
+</dialog>
+
+<script src="mood.js"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const DATA_URL = "data/market.json";
+  const REFRESH_MS = 5 * 60 * 1000;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const REPLAY_SECONDS = reduced ? 120 : 60;   // one whole trading day
+  const HOLD_SECONDS = 4;                       // pause on the close before looping
+  const SHORT = { dow: "Dow", sp500: "S&P 500", nasdaq: "Nasdaq", russell: "Russell" };
+  const DROPS = 5;                              // blobs per index: one core + four satellites
+  const hex = c => "#" + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("");
+  const fmtPct = p => (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(2) + "%";
+  const fmtLvl = v => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtET = (sec, opts) => new Date(sec * 1000).toLocaleString("en-US", Object.assign({ timeZone: "America/New_York" }, opts));
+
+  // ---------- state ----------
+  let data = null, mode = "none", stale = false;
+  let pos = 0, hold = 0, paused = false;
+  const lanes = [];            // per index: smoothed values + phases
+  let avgPctShown = 0;
+
+  // ---------- readouts ----------
+  function buildReadouts() {
+    const box = $("readouts"); box.textContent = "";
+    for (const ix of data.indexes) {
+      const el = document.createElement("div");
+      el.className = "idx";
+      el.innerHTML = `<div class="name"><span class="chip"></span><span class="long"></span><span class="short"></span></div>
+        <div class="pct num"></div><div class="lvl num"></div><div class="chop"></div>`;
+      el.querySelector(".long").textContent = ix.name;
+      el.querySelector(".short").textContent = SHORT[ix.key] || ix.name;
+      box.appendChild(el);
+      ix.el = el;
+    }
+  }
+
+  // ---------- data ----------
+  async function load() {
+    try {
+      const r = await fetch(DATA_URL + "?t=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      if (!d.indexes || d.indexes.length !== 4 || d.indexes.some(i => !i.bars || i.bars.length < 2)) throw new Error("incomplete data");
+      const fresh = !data || d.generated_at !== data.generated_at;
+      if (!fresh) return;
+      const firstLoad = !data;
+      for (const ix of d.indexes) ix.closes = ix.bars.map(b => b[1]);
+      data = d;
+      buildReadouts();
+      const st = Mood.marketState(Date.now(), Math.max(...d.indexes.map(i => i.last_time)));
+      const newMode = st.mode; stale = !!st.stale;
+      if (newMode !== mode || firstLoad) { pos = newMode === "live" ? lastPos() : startPos(d); hold = 0; }
+      mode = newMode;
+      if (mode === "live") pos = lastPos();
+      if (firstLoad) initLanes();
+      step(0); ui();                 // numbers show at once, not after the first slow frames
+      $("notice").classList.remove("on");
+      $("timeline").hidden = mode !== "replay";
+      $("src").textContent = `Data: index levels from ${d.source.replace(/ \(delayed\)$/, "")}, delayed. Last fetched ${fmtET(d.generated_at, { weekday: "short", hour: "numeric", minute: "2-digit" })} ET. When the market is closed, the lamp replays the last real trading day.`;
+    } catch (e) {
+      if (!data) {
+        mode = "none";
+        setStatus("error", "Market data unavailable");
+        $("notice").textContent = "Couldn't load the market data just now. Trying again in a minute.";
+        $("notice").classList.add("on");
+        setTimeout(load, 60000);
+      }
+      console.warn("market-moods load:", e.message);
+    }
+  }
+  // #at=13:05 starts the replay at that Eastern time (a shareable link to a moment)
+  function startPos(d) {
+    const m = /at=(\d{1,2}):(\d{2})/.exec(location.hash); if (!m) return 0;
+    const want = +m[1] * 60 + +m[2], bars = d.indexes[0].bars;
+    const i = bars.findIndex(b => { const [h, mm] = fmtET(b[0], { hour: "numeric", minute: "2-digit", hour12: false }).split(":"); return (+h % 24) * 60 + +mm >= want; });
+    return i < 0 ? bars.length - 1 : i;
+  }
+  const lastPos = () => Math.min(...data.indexes.map(i => i.bars.length - 1));
+
+  function setStatus(cls, text) {
+    const s = $("status"); s.className = "status " + cls; $("statusText").textContent = text;
+  }
+
+  // ---------- lanes ----------
+  function initLanes() {
+    lanes.length = 0;
+    data.indexes.forEach((ix, i) => {
+      const p0 = (Mood.priceAt(ix.bars, pos) / ix.prev_close - 1) * 100;
+      const drops = [];
+      for (let k = 0; k < DROPS; k++) {
+        const s = i * 7.13 + k * 2.71;
+        drops.push({ ax: 0.6 + 0.4 * frac(s * 1.3), wx: 0.23 + 0.31 * frac(s * 2.1), px: frac(s * 3.7) * 6.28,
+                     ay: 0.7 + 0.5 * frac(s * 4.3), wy: 0.11 + 0.19 * frac(s * 5.9), py: frac(s * 6.1) * 6.28,
+                     rr: k === 0 ? 1 : 0.5 + 0.25 * frac(s * 7.7) });
+      }
+      lanes.push({ pct: p0, h: Mood.height(p0), sz: Mood.size(p0), sp: 1, ph: i * 10, col: Mood.colour(p0), drops });
+    });
+  }
+  function frac(x) { x = Math.sin(x * 12.9898) * 43758.5453; return x - Math.floor(x); }
+
+  // ---------- WebGL lamp ----------
+  const canvas = $("lamp");
+  const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, alpha: false });
+  const N = 4 * DROPS;
+  let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat;
+  if (gl) {
+    const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
+    const fs = `precision mediump float;
+      uniform vec2 uRes; uniform vec3 uBalls[${N}]; uniform vec3 uCols[${N}];
+      uniform vec3 uBgTop; uniform vec3 uBgBot; uniform vec3 uHeat;
+      void main(){
+        vec2 q = gl_FragCoord.xy / uRes.y;
+        float f = 0.0; vec3 c = vec3(0.0);
+        for (int i = 0; i < ${N}; i++) {
+          vec2 d = q - uBalls[i].xy; float r = uBalls[i].z;
+          float w = r * r / max(dot(d, d), 1e-5); w *= w;        // squared falloff: globs stay distinct
+          f += w; c += uCols[i] * w;
+        }
+        c /= max(f, 1e-5);
+        float y = gl_FragCoord.y / uRes.y;
+        vec3 bg = mix(uBgBot, uBgTop, smoothstep(0.0, 1.0, y));
+        bg += uHeat * 0.22 * pow(1.0 - y, 3.0);                 // the lamp's warm floor, tinted by the mood
+        float e = 0.035;
+        float body = smoothstep(1.0 - e, 1.0 + e, f);
+        float glow = smoothstep(0.08, 1.0, f) * (1.0 - body);
+        vec3 wax = c * (0.62 + 0.38 * smoothstep(1.0, 3.2, f)) + vec3(1.0) * 0.14 * smoothstep(2.5, 7.0, f);
+        vec3 col = bg + c * glow * 0.20;
+        col = mix(col, wax, body);
+        gl_FragColor = vec4(col, 1.0);
+      }`;
+    const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o);
+      if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+    prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(prog); gl.useProgram(prog);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, "p"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    uRes = gl.getUniformLocation(prog, "uRes"); uBalls = gl.getUniformLocation(prog, "uBalls");
+    uCols = gl.getUniformLocation(prog, "uCols"); uBgTop = gl.getUniformLocation(prog, "uBgTop");
+    uBgBot = gl.getUniformLocation(prog, "uBgBot"); uHeat = gl.getUniformLocation(prog, "uHeat");
+  }
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width = Math.round(innerWidth * dpr); canvas.height = Math.round(innerHeight * dpr);
+    if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  addEventListener("resize", resize); resize();
+
+  // the height band blobs travel in: between the mood caption above and the timeline below,
+  // measured from the real layout (phones wrap the caption), in units of canvas height from the floor
+  function travel(maxR) {
+    const H = innerHeight, top = document.querySelector(".mood").getBoundingClientRect().bottom;
+    const foot = $("timeline").hidden ? $("readouts").getBoundingClientRect().top : $("timeline").getBoundingClientRect().top;
+    const lo = (H - foot) / H + maxR + 0.05;        // + room for the label under the blob
+    const hi = 1 - top / H - maxR - 0.01;
+    return hi > lo ? [lo, hi] : [(lo + hi) / 2, (lo + hi) / 2];
+  }
+  const balls = new Float32Array(N * 3), cols = new Float32Array(N * 3);
+
+  // ---------- frame ----------
+  let last = performance.now(), uiT = 0;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (data && mode !== "none") step(dt);
+    if (gl && lanes.length) draw();
+    if ((uiT += dt) > 0.1 && data) { uiT = 0; ui(); }
+    requestAnimationFrame(frame);
+  }
+
+  function step(dt) {
+    const nBars = lastPos() + 1;
+    if (mode === "replay" && !paused) {
+      if (pos >= nBars - 1) { if ((hold += dt) > HOLD_SECONDS) { pos = 0; hold = 0; } }
+      else pos = Math.min(nBars - 1, pos + dt * (nBars - 1) / REPLAY_SECONDS);
+    }
+    const k = 1 - Math.exp(-dt * 2.5);
+    let sum = 0;
+    data.indexes.forEach((ix, i) => {
+      const L = lanes[i];
+      const pct = (Mood.priceAt(ix.bars, pos) / ix.prev_close - 1) * 100;
+      const chop = Mood.choppiness(ix.closes, Math.floor(pos));
+      L.pct += (pct - L.pct) * k;
+      L.h += (Mood.height(pct) - L.h) * k;
+      L.sz += (Mood.size(pct) - L.sz) * k;
+      L.sp += (Mood.speed(chop) * (reduced ? 0.4 : 1) - L.sp) * k;
+      L.chop = chop; L.rawPct = pct;
+      const c = Mood.colour(L.pct);
+      for (let j = 0; j < 3; j++) L.col[j] += (c[j] - L.col[j]) * k;
+      L.ph += dt * L.sp;
+      sum += pct;
+    });
+    avgPctShown = sum / data.indexes.length;
+  }
+
+  function draw() {
+    const W = canvas.width, H = canvas.height, aspect = W / H;
+    const laneW = aspect / 4;
+    const baseR = Math.min(laneW * 0.34, 0.095);
+    const band = travel(baseR * 1.4);
+    let n = 0;
+    lanes.forEach((L, i) => {
+      const cx = (i + 0.5) * laneW;
+      let low = Infinity;
+      const cy = band[0] + L.h * (band[1] - band[0]);
+      const amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
+      L.drops.forEach((d, k) => {
+        const core = k === 0;
+        // satellites hug the core (a lumpy, living outline); the choppier the last hour, the further
+        // they break away and rejoin. A steady index stays whole, a choppy one comes apart.
+        const brk = Math.min(1, Math.max(0.1, (L.sp - 0.6) / 1.4));
+        const drift = core ? 0 : 0.75 + 1.1 * brk * Math.max(0, Math.sin(L.ph * 0.17 + d.px * 1.7));
+        const R = baseR * L.sz;             // offsets scale with the blob, so phone and desktop look alike
+        const x = cx + Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp;
+        const y = cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp;
+        balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = baseR * L.sz * d.rr;
+        low = Math.min(low, y - baseR * L.sz * d.rr * 1.1);
+        cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
+        n++;
+      });
+      L.tagX = cx / aspect; L.tagY = low - 0.035;   // the label sits under the blob's lowest droplet
+    });
+    const heat = Mood.colour(avgPctShown);
+    gl.uniform2f(uRes, W, H);
+    gl.uniform3fv(uBalls, balls); gl.uniform3fv(uCols, cols);
+    gl.uniform3f(uBgTop, 0.035, 0.02, 0.055);
+    gl.uniform3f(uBgBot, 0.07, 0.035, 0.08);
+    gl.uniform3f(uHeat, heat[0], heat[1], heat[2]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  function ui() {
+    if (mode === "none") return;
+    data.indexes.forEach((ix, i) => {
+      const L = lanes[i]; if (!L) return;
+      const price = Mood.priceAt(ix.bars, pos), c = hex(Mood.colour(L.rawPct));
+      ix.el.querySelector(".chip").style.background = c;
+      const pe = ix.el.querySelector(".pct"); pe.textContent = fmtPct(L.rawPct); pe.style.color = c;
+      ix.el.querySelector(".lvl").textContent = fmtLvl(price);
+      ix.el.querySelector(".chop").textContent = Mood.chopWord(L.chop) + " last hour";
+    });
+    const tags = $("tags");
+    if (tags.children.length !== data.indexes.length) {
+      tags.textContent = "";
+      data.indexes.forEach(ix => { const s = document.createElement("span"); s.textContent = SHORT[ix.key] || ix.name; tags.appendChild(s); });
+    }
+    lanes.forEach((L, i) => { if (L.tagX == null) return; const s = tags.children[i];
+      s.style.left = (L.tagX * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%";
+      s.style.visibility = "visible"; });
+    $("moodWord").textContent = Mood.moodWord(avgPctShown);
+    $("moodWord").style.color = hex(Mood.colour(avgPctShown).map(v => v * 0.35 + 0.65));
+    $("moodSub").textContent = "Average move " + fmtPct(avgPctShown);
+    const barT = data.indexes[0].bars[Math.min(Math.round(pos), data.indexes[0].bars.length - 1)][0];
+    const day = fmtET(data.indexes[0].last_time, { weekday: "short", month: "short", day: "numeric" });
+    if (mode === "live") {
+      setStatus("live", `Live, delayed · as of ${fmtET(barT, { hour: "numeric", minute: "2-digit" })} ET`);
+    } else {
+      setStatus("replay", (stale ? "Feed behind · replaying " : "Market closed · replaying ") + day);
+      $("clock").textContent = fmtET(barT, { hour: "numeric", minute: "2-digit" }) + " ET";
+      $("progress").style.width = (pos / lastPos() * 100).toFixed(2) + "%";
+    }
+  }
+
+  // ---------- controls ----------
+  $("helpBtn").onclick = () => $("help").showModal();
+  $("helpClose").onclick = () => $("help").close();
+  $("fsBtn").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
+  $("playBtn").onclick = () => {
+    paused = !paused;
+    $("playBtn").setAttribute("aria-label", paused ? "Play replay" : "Pause replay");
+    $("playIcon").innerHTML = paused ? '<path d="M4 2l10 6-10 6z"/>' : '<path d="M4 2h3v12H4zm5 0h3v12H9z"/>';
+  };
+  canvas.addEventListener("click", () => document.body.classList.toggle("bare"));
+  $("chrome").addEventListener("click", e => { if (e.target === $("chrome")) document.body.classList.toggle("bare"); });
+  addEventListener("keydown", e => {
+    if (e.target.closest && e.target.closest("dialog")) return;
+    if (e.key === "h") document.body.classList.toggle("bare");
+    else if (e.key === "?") $("help").showModal();
+    else if (e.key === " " && mode === "replay") { e.preventDefault(); $("playBtn").click(); }
+  });
+  $("ramp").style.background = "linear-gradient(90deg," +
+    [-1, -0.6, -0.35, -0.15, 0, 0.15, 0.35, 0.6, 1].map(p => hex(Mood.colour(p)) + " " + ((p + 1) / 2 * 100).toFixed(1) + "%").join(",") + ")";
+
+  if (!gl) {
+    $("notice").textContent = "This browser can't draw the lamp (WebGL is off). The numbers below are still live.";
+    $("notice").classList.add("on");
+  }
+  load();
+  setInterval(load, REFRESH_MS);
+  requestAnimationFrame(frame);
+  window.__mm = { get mode() { return mode; }, get pos() { return pos; }, lanes, get data() { return data; }, gl: !!gl };
+})();
+</script>
+</body>
+</html>

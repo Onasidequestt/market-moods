@@ -1,0 +1,32 @@
+# Refresh data/market.json every 10 minutes while US markets can be open, plus once after
+# the close. Commits only when the numbers changed. Pages redeploys from main on each commit.
+# ponytail: GitHub cron is best-effort (runs can start 5-20 min late) and a scheduled workflow
+# pauses after 60 days without repo activity. Ceiling: a prototype's "delayed" promise.
+# Upgrade path: a fetcher on the client's own host (cron + licensed feed), page reads it there.
+name: fetch market data
+on:
+  schedule:
+    - cron: "*/10 13-20 * * 1-5"   # 13:00-20:59 UTC covers 9:30-16:00 ET in both EDT and EST
+    - cron: "20 21 * * 1-5"        # after the close, so replay always has the full day
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: fetch, cancel-in-progress: false }
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: python3 fetch.py --selfcheck && python3 fetch.py
+      - run: node check.js
+      - run: |
+          git diff --quiet data/market.json && { echo "no change"; exit 0; }
+          git config user.name "market-moods bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/market.json
+          git commit -m "data: $(date -u +%FT%TZ)"
+          git push
