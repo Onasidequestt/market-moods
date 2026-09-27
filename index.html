@@ -456,7 +456,7 @@
     const barT = data.indexes[0].bars[Math.min(Math.round(pos), data.indexes[0].bars.length - 1)][0];
     const day = dayLabel(curDay, { weekday: "short", month: "short", day: "numeric" });
     if (mode === "live") {
-      setStatus("live", `Live · about 15 min behind · as of ${fmtET(barT, { hour: "numeric", minute: "2-digit" })} ET`);
+      setStatus("live", `Live, delayed · as of ${fmtET(barT, { hour: "numeric", minute: "2-digit" })} ET`);   // the as-of time IS the delay
     } else {
       setStatus("replay", (stale ? "Feed behind · replaying " : "Market closed · replaying ") + day);
       $("clock").textContent = fmtET(barT, { hour: "numeric", minute: "2-digit" }) + " ET";

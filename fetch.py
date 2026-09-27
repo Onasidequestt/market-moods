@@ -2,7 +2,7 @@
 """fetch.py — pull the four US index series into data/market.json for the page.
 
 Source: Yahoo Finance's public chart endpoint (no key). Index levels arrive delayed
-(Yahoo marks US indexes real-time-ish, but we promise only "delayed ~15 min").
+(a 5-minute bar, fetched every 10 minutes by a best-effort scheduler: up to about 30 minutes behind).
 Writes one file:
   data/market.json = {generated_at, source, indexes:[{key,name,symbol,session_date,
                       prev_close, last, last_time, bars:[[unix, close], ...]}]}
