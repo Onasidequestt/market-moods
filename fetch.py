@@ -7,7 +7,9 @@ Writes one file:
   data/market.json = {generated_at, source, indexes:[{key,name,symbol,session_date,
                       prev_close, last, last_time, bars:[[unix, close], ...]}]}
 `bars` = every 5-minute close of the MOST RECENT session; `prev_close` = the official
-daily close of the session before it. The page decides live vs replay from last_time.
+daily close of the session before it. `sessions` = the same pair for each of the last five
+trading days (oldest first), so replay can show a real down day as well as an up day.
+The page decides live vs replay from last_time.
 
 ponytail: Yahoo's endpoint is unofficial and can change or rate-limit. Ceiling: fine for a
 prototype polled every 10 min by one GitHub Action. Upgrade path: a licensed feed
@@ -35,17 +37,22 @@ def pairs(res):
     return [(t, c) for t, c in zip(ts, cl) if c is not None]
 
 def shape(key, name, sym, intraday, daily):
-    """Pure: last session's 5-min bars + the official close of the session before it."""
+    """Pure: each session's 5-min bars + the official close of the session before it."""
     bars = pairs(intraday)
     if not bars: raise ValueError(f"{sym}: no intraday bars")
     day = lambda t: datetime.fromtimestamp(t, ET).date()
-    last_day = day(bars[-1][0])
-    session = [(t, round(c, 2)) for t, c in bars if day(t) == last_day]
-    prior = [c for t, c in pairs(daily) if day(t) < last_day]
-    if not prior: raise ValueError(f"{sym}: no daily close before {last_day}")
-    return {"key": key, "name": name, "symbol": sym, "session_date": last_day.isoformat(),
-            "prev_close": round(prior[-1], 2), "last": session[-1][1], "last_time": session[-1][0],
-            "bars": [list(b) for b in session]}
+    closes = pairs(daily)
+    sessions = []
+    for d in sorted({day(t) for t, _ in bars}):
+        prior = [c for t, c in closes if day(t) < d]
+        if not prior: continue                      # no close before it: cannot say how it moved
+        sessions.append({"date": d.isoformat(), "prev_close": round(prior[-1], 2),
+                         "bars": [[t, round(c, 2)] for t, c in bars if day(t) == d]})
+    if not sessions: raise ValueError(f"{sym}: no daily close before {day(bars[-1][0])}")
+    last = sessions[-1]
+    return {"key": key, "name": name, "symbol": sym, "session_date": last["date"],
+            "prev_close": last["prev_close"], "last": last["bars"][-1][1], "last_time": last["bars"][-1][0],
+            "bars": last["bars"], "sessions": sessions}
 
 def build():
     out = []
@@ -67,7 +74,13 @@ def selfcheck():
     assert s["prev_close"] == 100.0, s          # the 09-24 close, not the 09-25 daily row
     assert s["bars"] == [[t0, 101.0], [t0 + 600, 103.0]], s   # prior day + null dropped
     assert s["last"] == 103.0 and s["last_time"] == t0 + 600
-    print("✓ fetch selfcheck: 4 asserts")
+    # every session carries the close of the day before it (09-24 <- 09-23's 98, 09-25 <- 09-24's 100)
+    assert [(x["date"], x["prev_close"]) for x in s["sessions"]] == [("2026-09-24", 98.0), ("2026-09-25", 100.0)], s
+    # a session with no daily close before it (09-22 here) is dropped, not guessed
+    d22 = int(datetime(2026, 9, 22, 11, 0, tzinfo=ET).timestamp())
+    s2 = shape("sp500", "S&P 500", "^GSPC", {"timestamp": [d22, t0], "indicators": {"quote": [{"close": [97.0, 101.0]}]}}, daily)
+    assert [x["date"] for x in s2["sessions"]] == ["2026-09-25"], s2["sessions"]
+    print("✓ fetch selfcheck: 6 asserts")
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv: selfcheck(); sys.exit(0)

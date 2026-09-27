@@ -25,6 +25,8 @@ RC=0
 for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8766/#at=12:10" "$T/ok"
   shoot $SIZE "http://127.0.0.1:8766/.nodata-check/" "$T/no"
+  shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-23&at=15:55" "$T/down"
+  shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-21&at=15:55" "$T/up"
   python3 - "$T" "$SIZE" <<'EOF' || RC=1
 import re, sys, html
 from PIL import Image
@@ -54,8 +56,29 @@ if w_ok < 400: bad.append(f"lamp drew only {w_ok} wax pixels")
 tn = text(f"{t}/no.html"); w_no = wax(f"{t}/no.png")
 if "Couldn't load the market data" not in tn: bad.append("no-data notice missing")
 if w_no > 20: bad.append(f"no-data page still drew {w_no} wax pixels (fake liveliness)")
+# a real down day (Wed 09-23: all four fell) picked by link: the day chip is pressed, the mood is
+# fearful/uneasy, every card is negative, and the status names that day
+dn = open(f"{t}/down.html").read()
+chips = re.findall(r'class="btn day" aria-pressed="(true|false)"[^>]*>([^<]+)<', dn)
+if len(chips) < 2 or [c for p, c in chips if p == "true"] != ["Wed 23"]: bad.append(f"day chips {chips}, want Wed 23 pressed")
+dp = re.findall(r'class="pct num"[^>]*>([+−]\d+\.\d\d%)<', dn)
+if len(dp) != 4 or any(not x.startswith("−") for x in dp): bad.append(f"down day cards {dp}, want four negatives")
+if not re.search(r'id="moodWord"[^>]*>(Fearful|Uneasy)<', dn): bad.append("down day mood is not Fearful/Uneasy")
+if "replaying Wed, Sep 23" not in dn: bad.append("status does not name Wed, Sep 23")
+# wax must stay between the caption and the footer: count wax in the caption's last 22px and in the
+# 34px strip under the footer's top edge (day chips / timeline), both neutral grey by design
+def strip_wax(png, y0, y1):
+    im = Image.open(png).convert("RGB"); w, h = im.size; sc = h / int(size.split(",")[1])
+    box = im.crop((0, max(0, int(y0 * sc)), w, min(h, int(y1 * sc))))
+    return sum(1 for r, g, b in box.getdata() if max(r, g, b) > 150 and max(r, g, b) - min(r, g, b) > 70)
+for nm in ("ok", "down", "up"):
+    m = re.search(r'id="lamp"[^>]*data-edges="(\d+),(\d+)"', open(f"{t}/{nm}.html").read())
+    if not m: bad.append(f"{nm}: page did not report its edges"); continue
+    top, foot = int(m[1]), int(m[2])
+    cw, fw = strip_wax(f"{t}/{nm}.png", top - 22, top), strip_wax(f"{t}/{nm}.png", foot, foot + 34)
+    if cw > 30 or fw > 30: bad.append(f"{nm}: wax over the caption ({cw}px) or the footer ({fw}px)")
 if bad: print(f"✘ browser-check {size}: " + "; ".join(bad)); sys.exit(1)
-print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px")
+print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp}")
 EOF
 done
 exit $RC

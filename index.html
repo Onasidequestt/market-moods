@@ -61,6 +61,10 @@
     color: var(--ink-2); white-space: nowrap; transition: bottom .25s linear; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
 
   footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+  .days { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .days[hidden] { display: none; }
+  .btn.day { height: 28px; padding: 0 11px; font-size: 12px; color: var(--ink-2); }
+  .btn.day[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-color: var(--ink); }
   .timeline { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
   .timeline .clock { font-size: 12.5px; color: var(--ink-2); min-width: 78px; }
   .track { position: relative; flex: 1; height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; }
@@ -129,12 +133,13 @@
   <div class="mood" aria-live="polite">
     <div class="word" id="moodWord"></div>
     <div class="sub num" id="moodSub"></div>
-    <div class="key"><span class="long">Colour = today's move · higher = up · bigger = bigger move · restless = choppy</span><span class="short">colour = move · high = up · big = big move</span></div>
+    <div class="key"><span class="long">Colour = today's move · higher = up · bigger = bigger move · restless = choppy</span><span class="short">colour = move · high = up · big = big move · restless = choppy</span></div>
   </div>
 
   <div class="notice" id="notice"></div>
 
   <footer>
+    <div class="days" id="days" role="group" aria-label="Trading day to replay" hidden></div>
     <div class="timeline" id="timeline" hidden>
       <button class="btn" id="playBtn" type="button" aria-label="Pause replay"><svg viewBox="0 0 16 16" aria-hidden="true" id="playIcon"><path d="M4 2h3v12H4zm5 0h3v12H9z"/></svg></button>
       <span class="clock num" id="clock"></span>
@@ -158,7 +163,7 @@
   </dl>
   <div class="ramp" id="ramp"></div>
   <div class="ramp-l"><span>−1%</span><span>−0.5%</span><span>0</span><span>+0.5%</span><span>+1%</span></div>
-  <p class="src" id="src">Data: index levels from Yahoo Finance, delayed. When the market is closed, the lamp replays the last real trading day.</p>
+  <p class="src" id="src">Data: index levels from Yahoo Finance, delayed. When the market is closed, the lamp replays a real trading day from the past week.</p>
   <button class="btn close" id="helpClose" type="button">Close</button>
 </dialog>
 
@@ -180,7 +185,7 @@
   const fmtET = (sec, opts) => new Date(sec * 1000).toLocaleString("en-US", Object.assign({ timeZone: "America/New_York" }, opts));
 
   // ---------- state ----------
-  let data = null, mode = "none", stale = false;
+  let data = null, mode = "none", stale = false, days = [], curDay = null;
   let pos = 0, hold = 0, paused = false;
   const lanes = [];            // per index: smoothed values + phases
   let avgPctShown = 0;
@@ -210,19 +215,30 @@
       const fresh = !data || d.generated_at !== data.generated_at;
       if (!fresh) return;
       const firstLoad = !data;
-      for (const ix of d.indexes) ix.closes = ix.bars.map(b => b[1]);
+      for (const ix of d.indexes) {
+        ix.latest = { date: ix.session_date, prev_close: ix.prev_close, bars: ix.bars };
+        if (!Array.isArray(ix.sessions) || !ix.sessions.length) ix.sessions = [ix.latest];
+      }
       data = d;
       buildReadouts();
       const st = Mood.marketState(Date.now(), Math.max(...d.indexes.map(i => i.last_time)));
       const newMode = st.mode; stale = !!st.stale;
+      // replay days = the dates all four indexes share; live always shows today
+      days = d.indexes[0].sessions.map(x => x.date).filter(dt => d.indexes.every(ix => ix.sessions.some(x => x.date === dt)));
+      const hashDay = (/day=(\d{4}-\d{2}-\d{2})/.exec(location.hash) || [])[1];
+      const want = newMode === "live" ? d.indexes[0].session_date
+        : firstLoad && days.includes(hashDay) ? hashDay : days.includes(curDay) ? curDay : days[days.length - 1];
+      useDay(want);
       if (newMode !== mode || firstLoad) { pos = newMode === "live" ? lastPos() : startPos(d); hold = 0; }
       mode = newMode;
       if (mode === "live") pos = lastPos();
+      buildDays();
       if (firstLoad) initLanes();
-      step(0); ui();                 // numbers show at once, not after the first slow frames
+      step(0); ui(); if (gl) draw(); // numbers and lamp show at once, not after the first slow frames
       $("notice").classList.remove("on");
       $("timeline").hidden = mode !== "replay";
-      $("src").textContent = `Data: index levels from ${d.source.replace(/ \(delayed\)$/, "")}, delayed. Last fetched ${fmtET(d.generated_at, { weekday: "short", hour: "numeric", minute: "2-digit" })} ET. When the market is closed, the lamp replays the last real trading day.`;
+      $("days").hidden = mode !== "replay" || days.length < 2;
+      $("src").textContent = `Data: index levels from ${d.source.replace(/ \(delayed\)$/, "")}, delayed. Last fetched ${fmtET(d.generated_at, { weekday: "short", hour: "numeric", minute: "2-digit" })} ET. When the market is closed, the lamp replays a real trading day from the past week: pick one above the timeline.`;
     } catch (e) {
       if (!data) {
         mode = "none";
@@ -240,6 +256,24 @@
     const want = +m[1] * 60 + +m[2], bars = d.indexes[0].bars;
     const i = bars.findIndex(b => { const [h, mm] = fmtET(b[0], { hour: "numeric", minute: "2-digit", hour12: false }).split(":"); return (+h % 24) * 60 + +mm >= want; });
     return i < 0 ? bars.length - 1 : i;
+  }
+  function useDay(date) {
+    curDay = date;
+    for (const ix of data.indexes) {
+      const s = ix.sessions.find(x => x.date === date) || ix.latest;
+      ix.bars = s.bars; ix.prev_close = s.prev_close; ix.closes = s.bars.map(b => b[1]);
+    }
+  }
+  const dayLabel = (date, opts) => new Date(date + "T12:00:00Z").toLocaleDateString("en-US", Object.assign({ timeZone: "UTC" }, opts));
+  function buildDays() {
+    const box = $("days"); box.textContent = "";
+    days.forEach(dt => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "btn day"; b.textContent = dayLabel(dt, { weekday: "short" }) + " " + +dt.slice(8);
+      b.setAttribute("aria-pressed", dt === curDay); b.title = dayLabel(dt, { weekday: "long", month: "long", day: "numeric" });
+      b.onclick = () => { useDay(dt); pos = 0; hold = 0; buildDays(); step(0); ui(); };
+      box.appendChild(b);
+    });
   }
   const lastPos = () => Math.min(...data.indexes.map(i => i.bars.length - 1));
 
@@ -262,6 +296,7 @@
       lanes.push({ pct: p0, h: Mood.height(p0), sz: Mood.size(p0), sp: 1, ph: i * 10, col: Mood.colour(p0), drops });
     });
   }
+  const clampN = (v, a, b) => Math.min(b, Math.max(a, v));
   function frac(x) { x = Math.sin(x * 12.9898) * 43758.5453; return x - Math.floor(x); }
 
   // ---------- WebGL lamp ----------
@@ -317,7 +352,8 @@
   // measured from the real layout (phones wrap the caption), in units of canvas height from the floor
   function travel(maxR) {
     const H = innerHeight, top = document.querySelector(".mood").getBoundingClientRect().bottom;
-    const foot = $("timeline").hidden ? $("readouts").getBoundingClientRect().top : $("timeline").getBoundingClientRect().top;
+    const foot = [$("days"), $("timeline"), $("readouts")].find(el => !el.hidden).getBoundingClientRect().top;
+    canvas.dataset.edges = Math.round(top) + "," + Math.round(foot);   // read by browser-check.sh
     const lo = (H - foot) / H + maxR + 0.05;        // + room for the label under the blob
     const hi = 1 - top / H - maxR - 0.01;
     return hi > lo ? [lo, hi] : [(lo + hi) / 2, (lo + hi) / 2];
@@ -374,11 +410,12 @@
         const core = k === 0;
         // satellites hug the core (a lumpy, living outline); the choppier the last hour, the further
         // they break away and rejoin. A steady index stays whole, a choppy one comes apart.
-        const brk = Math.min(1, Math.max(0.1, (L.sp - 0.6) / 1.4));
-        const drift = core ? 0 : 0.75 + 1.1 * brk * Math.max(0, Math.sin(L.ph * 0.17 + d.px * 1.7));
+        const brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
+        const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin(L.ph * 0.17 + d.px * 1.7));
         const R = baseR * L.sz;             // offsets scale with the blob, so phone and desktop look alike
-        const x = cx + Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp;
-        const y = cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp;
+        const r = R * d.rr, room = Math.max(0, laneW * 0.5 - r);   // wax stays in its own lane and band
+        const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
+        const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, band[0], band[1]);
         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = baseR * L.sz * d.rr;
         low = Math.min(low, y - baseR * L.sz * d.rr * 1.1);
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
@@ -417,9 +454,9 @@
     $("moodWord").style.color = hex(Mood.colour(avgPctShown).map(v => v * 0.35 + 0.65));
     $("moodSub").textContent = "Average move " + fmtPct(avgPctShown);
     const barT = data.indexes[0].bars[Math.min(Math.round(pos), data.indexes[0].bars.length - 1)][0];
-    const day = fmtET(data.indexes[0].last_time, { weekday: "short", month: "short", day: "numeric" });
+    const day = dayLabel(curDay, { weekday: "short", month: "short", day: "numeric" });
     if (mode === "live") {
-      setStatus("live", `Live, delayed · as of ${fmtET(barT, { hour: "numeric", minute: "2-digit" })} ET`);
+      setStatus("live", `Live · about 15 min behind · as of ${fmtET(barT, { hour: "numeric", minute: "2-digit" })} ET`);
     } else {
       setStatus("replay", (stale ? "Feed behind · replaying " : "Market closed · replaying ") + day);
       $("clock").textContent = fmtET(barT, { hour: "numeric", minute: "2-digit" }) + " ET";

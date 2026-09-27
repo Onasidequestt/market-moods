@@ -67,4 +67,17 @@ for (const i of d.indexes) {
   ok(Math.abs(i.last / i.prev_close - 1) < 0.15, i.key + ": move under 15% (a bad close would show here)");
 }
 ok(new Set(d.indexes.map(i => i.session_date)).size === 1, "all four from the same session");
+// sessions: the past week's real days for replay, oldest first, the last one = the top-level session
+const dates = d.indexes[0].sessions.map(x => x.date);
+ok(dates.length >= 2 && dates.every((x, k) => k === 0 || x > dates[k - 1]), "sessions oldest first: " + dates);
+for (const i of d.indexes) {
+  ok(i.sessions.map(x => x.date).join() === dates.join(), i.key + ": same days as the Dow");
+  const L = i.sessions[i.sessions.length - 1];
+  ok(L.date === i.session_date && L.prev_close === i.prev_close && L.bars.length === i.bars.length, i.key + ": last session = top level");
+  for (let k = 1; k < i.sessions.length; k++) {
+    const prev = i.sessions[k - 1], cur = i.sessions[k];
+    // a day's prev_close is the day before's close; its last 5-min bar sits within 0.3% of that close
+    ok(Math.abs(cur.prev_close / prev.bars[prev.bars.length - 1][1] - 1) < 0.003, `${i.key} ${cur.date}: prev_close follows ${prev.date}`);
+  }
+}
 console.log(`✓ market-moods check: ${n} asserts`);
