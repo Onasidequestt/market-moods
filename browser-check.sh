@@ -184,6 +184,13 @@ okd = open(f"{t}/ok.html").read()
 ndoors_want = int(sys.argv[5])
 ndoors_got = len(re.findall(r'class="idx hasdoor"', okd))
 if ndoors_got != ndoors_want: bad.append(f"{ndoors_got} 'Look inside' doors, want {ndoors_want} (one per companies file on disk)")
+# the blob labels are doors too (critic 09-28: the Russell label opened an empty view): same count
+# ponytail: taps are not simulated here (dump-dom cannot click); every tap path goes through the one
+# canOpen() gate that sets these classes, so a wrong count is the visible symptom. Upgrade path: a CDP
+# click on each label in a scripted browser session.
+tagd = re.search(r'id="tags"[^>]*>(.*?)</div>', okd, re.S)
+ntag = len(re.findall(r'<span[^>]*\bclass="door"', tagd[1])) if tagd else -1
+if ntag != ndoors_want: bad.append(f"{ntag} blob labels open an inside view, want {ndoors_want} (one per companies file on disk)")
 sk = re.search(r'id="cell"[^>]*data-specks="(\d+)"', okd)
 if not sk or int(sk[1]) != 50: bad.append(f"lamp: {sk and sk[1]} specks in the S&P 500 blob, want its 50 biggest companies")
 # ...and really painted: on an up day the S&P 500's wax is green, so warm (red/amber) pixels inside
@@ -202,6 +209,7 @@ if core:
 if warm < 12 * sc * sc: bad.append(f"lamp: {warm} against-colour pixels in the S&P 500 core: the companies' specks are not painted")
 ncd = open(f"{t}/nocomp.html").read()
 if 'class="idx hasdoor"' in ncd or 'class="incell"' in ncd: bad.append("no company file, yet the door/inside view shows")
+if re.search(r'<span[^>]*\bclass="door"', ncd): bad.append("no company file, yet a blob label is a door")
 if re.search(r'data-specks="[1-9]', ncd): bad.append("no company file, yet specks are drawn (fake liveliness)")
 if wax(f"{t}/nocomp.png") < 400: bad.append("no company file broke the lamp itself")
 if bad: print(f"✘ browser-check {size}: " + "; ".join(bad)); sys.exit(1)

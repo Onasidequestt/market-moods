@@ -524,7 +524,8 @@
     if (tags.children.length !== data.indexes.length) {
       tags.textContent = "";
       data.indexes.forEach(ix => { const s = document.createElement("span"); s.textContent = SHORT[ix.key] || ix.name;
-        if (CELL_KEYS.includes(ix.key)) { s.className = "door"; s.title = "Look inside"; s.onclick = e => { e.stopPropagation(); openCell(ix.key); }; }
+        if (CELL_KEYS.includes(ix.key)) { if (canOpen(ix.key)) { s.className = "door"; s.title = "Look inside"; }
+          s.onclick = e => { if (openCell(ix.key)) e.stopPropagation(); }; }
         tags.appendChild(s); });
     }
     lanes.forEach((L, i) => { if (L.tagX == null) return; const s = tags.children[i];
@@ -605,7 +606,9 @@
     if (/size=move/.test(h)) cellSize = "move";
     return /(^#|&)cell(&|$)/.test(h);
   })();
-  function readoutDoors() { data && data.indexes.forEach(ix => ix.el && ix.el.classList.toggle("hasdoor", CELL_KEYS.includes(ix.key) && !!(cellState[ix.key] && cellState[ix.key].avail))); }
+  function readoutDoors() { data && data.indexes.forEach((ix, i) => { const on = CELL_KEYS.includes(ix.key) && canOpen(ix.key);
+    ix.el && ix.el.classList.toggle("hasdoor", on);
+    const t = $("tags").children[i]; if (t) { t.classList.toggle("door", on); t.title = on ? "Look inside" : ""; } }); }
   const cellSession = () => comp() && comp().sessions.find(x => x.date === curDay);
   // the members drawn today: biggest first, only those priced that day (null = no data, not flat)
   function cellMembers(S) {
@@ -788,12 +791,18 @@
     cv.dataset.pos = p.toFixed(4);                               // the moment the caption counts (browser-check.sh)
   }
 
+  // one gate for every way in (card, blob label, blob tap, #cell link): an index opens only once its
+  // companies file is known to exist (critic 09-28: the Russell label opened an empty view whose
+  // "will try again" error was false, since no file exists to retry)
+  function canOpen(key) { return !!(cellState[key] && cellState[key].avail); }
   function openCell(key) {
+    if (!canOpen(key || cellKey)) return false;
     if (key && key !== cellKey) { cellKey = key; cellNodes.clear(); }
     if (!(cellState[cellKey] && cellState[cellKey].comp)) loadCompanies(cellKey);
-    if (inCell) { cellStep(0); cellDraw(); cellUi(); return; }
+    if (inCell) { cellStep(0); cellDraw(); cellUi(); return true; }
     inCell = true; document.body.classList.add("incell"); document.body.classList.remove("bare");
     $("backBtn").hidden = false; cellNodes.clear(); cellStep(0); cellDraw(); cellUi();
+    return true;
   }
   function closeCell() {
     if (!inCell) return;
@@ -840,7 +849,7 @@
   canvas.addEventListener("click", e => {
     const H = innerHeight;
     const hit = data && lanes.length && data.indexes.find((ix, i) => {
-      if (!CELL_KEYS.includes(ix.key)) return false;
+      if (!canOpen(ix.key)) return false;
       const b = i * DROPS * 3;
       return Math.hypot(e.clientX - balls[b] * H, e.clientY - (H - balls[b + 1] * H)) < balls[b + 2] * H * 1.5;
     });
