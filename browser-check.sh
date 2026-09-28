@@ -208,4 +208,44 @@ if bad: print(f"✘ browser-check {size}: " + "; ".join(bad)); sys.exit(1)
 print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp} · {c1} · {c2} · {cdow} · {cnas} · {ndoors_got} doors")
 EOF
 done
+
+# ---- no-overlap rung: caption/note text must never collide with the controls row below it,
+# at any phone width 320-430, for every index that has a door (celldow/cellnasdaq/cell=sp500) ----
+for W in 320 390 430; do
+  shoot "$W,844" "http://127.0.0.1:8766/#cell&idx=dow&day=$D_LAST&at=12:10" "$T/ov_dow_$W"
+  shoot "$W,844" "http://127.0.0.1:8766/#cell&idx=nasdaq&day=$D_LAST&at=12:10" "$T/ov_nas_$W"
+  shoot "$W,844" "http://127.0.0.1:8766/#cell&day=$D_LAST&at=12:10" "$T/ov_sp_$W"
+done
+python3 - "$T" <<'EOF' || RC=1
+import re, sys
+t = sys.argv[1]
+bad = []
+for nm in ("ov_dow_320", "ov_dow_390", "ov_dow_430", "ov_nas_320", "ov_nas_390", "ov_nas_430", "ov_sp_320", "ov_sp_390", "ov_sp_430"):
+    dom = open(f"{t}/{nm}.html").read()
+    nb = re.search(r'data-notice-box="(-?\d+),(-?\d+),(-?\d+),(-?\d+)"', dom)
+    cb = re.search(r'data-ctl-box="(-?\d+),(-?\d+),(-?\d+),(-?\d+)"', dom)
+    if not (nb and cb): bad.append(f"{nm}: notice/ctl box not reported"); continue
+    nl, nt, nr, nn_ = (int(x) for x in nb.groups())
+    cl, ctp, cr, cb_ = (int(x) for x in cb.groups())
+    # standard rectangle overlap test: they intersect if they overlap on BOTH axes
+    overlap = nl < cr and cl < nr and nt < cb_ and ctp < nn_
+    if overlap: bad.append(f"{nm}: notice box ({nl},{nt},{nr},{nn_}) overlaps controls box ({cl},{ctp},{cr},{cb_})")
+if bad: print("✘ browser-check no-overlap: " + "; ".join(bad)); sys.exit(1)
+print("✓ browser-check no-overlap: caption/note never collides with controls at 320/390/430 (dow/nasdaq/sp500)")
+EOF
+
+# ---- help dialog must open scrolled to the TOP on a phone (autofocus on Close must not drag
+# the dialog's own scroll down past the first definitions) ----
+shoot 390,844 "http://127.0.0.1:8766/#help" "$T/help390"
+python3 - "$T" <<'EOF' || RC=1
+import re, sys
+t = sys.argv[1]
+dom = open(f"{t}/help390.html").read()
+m = re.search(r'data-help-scroll="(\d+)"', dom)
+if not m: print("✘ browser-check help-scroll: scrollTop not reported"); sys.exit(1)
+st = int(m[1])
+if st != 0: print(f"✘ browser-check help-scroll: dialog opened at scrollTop {st}, want 0"); sys.exit(1)
+print("✓ browser-check help-scroll: help dialog opens at scrollTop 0 on phone")
+EOF
+
 exit $RC

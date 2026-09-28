@@ -110,8 +110,10 @@
   .idx .lvl { font-size: 12px; color: var(--ink-2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .idx .chop { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
 
-  .notice { position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%); width: min(420px, calc(100% - 32px));
-    text-align: center; color: var(--ink-2); font-size: 15px; display: none; }
+  /* in normal footer flow (not absolutely positioned) so it can never overlap the controls
+     below it, no matter how many lines it wraps to at any phone width: rule 1, one shared
+     layout, not a per-index pixel offset. */
+  .notice { text-align: center; color: var(--ink-2); font-size: 15px; display: none; margin: 0 0 12px; }
   .notice.on { display: block; }
 
   dialog { border: 1px solid var(--line); border-radius: 18px; background: rgba(18, 11, 24, .94); color: var(--ink);
@@ -183,9 +185,8 @@
     <div class="key"><span class="long" id="cellKeyLong"></span><span class="short" id="cellKeyShort"></span></div>
   </div>
 
-  <div class="notice" id="notice"></div>
-
   <footer>
+    <div class="notice" id="notice"></div>
     <div class="cellctl" id="cellctl">
       <span class="seg" role="group" aria-label="How many companies" id="cellShowSeg"><span class="lbl2">Show</span>
         <button class="btn opt" type="button" data-top="50">Top 50</button><button class="btn opt" type="button" data-top="100">Top 100</button><button class="btn opt" type="button" data-top="500" id="cellTopAllBtn">All 500</button></span>
@@ -213,7 +214,7 @@
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
-    <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, trimmed to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
+    <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
   <div class="ramp-l"><span>−1%</span><span>−0.5%</span><span>0</span><span>+0.5%</span><span>+1%</span></div>
@@ -441,6 +442,9 @@
     if (gl && lanes.length && !inCell) draw();
     if (lanes.length) { if (inCell) { cellStep(dt); cellDraw(); } else specksDraw(); }
     if ((uiT += dt) > 0.1 && data) { uiT = 0; ui(); cellUi(); }
+    // exposed for browser-check.sh: the dialog's live scrollTop, however/whenever the browser
+    // actually applies its autofocus scroll — not just what we set the instant it opens.
+    const helpEl = $("help"); if (helpEl.open) document.body.dataset.helpScroll = helpEl.scrollTop;
     requestAnimationFrame(frame);
   }
 
@@ -769,6 +773,11 @@
     if (c && !S) msg = mode === "live" ? "Today's company data hasn't arrived yet. It follows the index within a fetch or two."
       : "No company data for " + dayLabel(curDay, { weekday: "long", month: "short", day: "numeric" }) + ". Pick another day below.";
     note.textContent = msg; note.classList.toggle("on", !!msg);
+    // exposed for browser-check.sh's no-overlap rung: the caption/note text must never collide
+    // with the controls row below it, at any phone width or wrap count (rule 1: one shared layout).
+    const nb = note.getBoundingClientRect(), cb = $("cellctl").getBoundingClientRect();
+    document.body.dataset.noticeBox = `${Math.round(nb.left)},${Math.round(nb.top)},${Math.round(nb.right)},${Math.round(nb.bottom)}`;
+    document.body.dataset.ctlBox = `${Math.round(cb.left)},${Math.round(cb.top)},${Math.round(cb.right)},${Math.round(cb.bottom)}`;
     if (!S || !L) { $("cellSub").textContent = ixName + " " + (L ? fmtPct(L.rawPct) : ""); cv.dataset.pos = ""; return; }
     const p = cellPos(S), list = cellMembers(S);
     let up = 0, ag = 0, big = null;
@@ -814,7 +823,12 @@
   document.querySelectorAll("#cellctl [data-size]").forEach(b => b.onclick = () => { cellSize = b.dataset.size; cellUi(); });
 
   // ---------- controls ----------
-  $("helpBtn").onclick = () => $("help").showModal();
+  // showModal() autofocuses the dialog's only focusable child (the Close button, at the very
+  // bottom of the definitions) and the browser scrolls that into view — on a phone that opens
+  // the dialog already scrolled past the first definitions. Force it back to the top every time,
+  // keyboard access untouched (the Close button still gets focus, just not the scroll).
+  function openHelp() { const h = $("help"); h.showModal(); h.scrollTop = 0; }
+  $("helpBtn").onclick = openHelp;
   $("helpClose").onclick = () => $("help").close();
   $("fsBtn").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
   $("fsBtn").hidden = !document.documentElement.requestFullscreen;   // iPhone Safari has no page fullscreen: no dead button
@@ -838,7 +852,7 @@
     if (e.target.closest && e.target.closest("dialog")) return;
     if (e.key === "Escape" && inCell) closeCell();
     else if (e.key === "h") document.body.classList.toggle("bare");
-    else if (e.key === "?") $("help").showModal();
+    else if (e.key === "?") openHelp();
     else if (e.key === " " && mode === "replay") { e.preventDefault(); $("playBtn").click(); }
   });
   $("ramp").style.background = "linear-gradient(90deg," +
@@ -851,6 +865,7 @@
   load();
   setInterval(load, REFRESH_MS);
   requestAnimationFrame(frame);
+  if (/(^#|&)help(&|$)/.test(location.hash)) openHelp();   // #help: for browser-check.sh only
   window.__mm = { get mode() { return mode; }, get pos() { return pos; }, lanes, get data() { return data; }, gl: !!gl,
                   get inCell() { return inCell; }, cellNodes };
 })();
