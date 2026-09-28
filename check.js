@@ -125,4 +125,18 @@ for (const key of Object.keys(CELL_FILE)) {
   ok(lastC.m.filter(Boolean).length >= CELL_MIN[key], `${key} ${lastC.date}: at least ${CELL_MIN[key]} companies priced (${lastC.m.filter(Boolean).length})`);
 }
 ok(anyCompanies, "at least one index has its companies file (else nothing to check)");
+// the "How to read it" copy may only name an index as having companies inside if its file exists
+// (critic 09-28: the help said "every index" while the Russell had no file and no door)
+{
+  const page = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+  const inside = (page.match(/<dt>Inside<\/dt><dd>([\s\S]*?)<\/dd>/) || [])[1] || "";
+  ok(inside, "help dialog has an Inside entry");
+  const NAME = { dow: "Dow", sp500: "S&amp;P 500", nasdaq: "Nasdaq", russell: "Russell 2000" };
+  const claim = inside.split(/[.(]/)[0];   // the first sentence, before any aside, names who has companies
+  for (const key of Object.keys(CELL_FILE)) {
+    const has = fs.existsSync(path.join(__dirname, "data", CELL_FILE[key]));
+    if (!has) ok(!claim.includes(NAME[key]) && !/every index/i.test(inside), `help must not claim ${key} has companies inside (no ${CELL_FILE[key]})`);
+    else ok(claim.includes(NAME[key]), `help names ${key} as having companies inside`);
+  }
+}
 console.log(`✓ market-moods check: ${n} asserts`);
