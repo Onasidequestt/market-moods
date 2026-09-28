@@ -118,8 +118,13 @@ for (const key of Object.keys(CELL_FILE)) {
     ok(S.m.length === co.companies.length, `${key} ${S.date}: one row per company`);
     ok(S.m.every(r => r === null || (r.length === S.t.length && r.every(v => Number.isInteger(v) && Math.abs(v) < 5000))), `${key} ${S.date}: rows on the day's clock, whole bp, under 50%`);
     const same = ix && ix.sessions.find(x => x.date === S.date);
-    // on the index's own clock (today's company file may trail the index by one fetch: a prefix)
-    if (same) ok(S.t.length <= same.bars.length && S.t.every((t, k) => t === same.bars[k][0]), `${key} ${S.date}: company clock = ${key}'s bar times`);
+    // on the index's own clock (today's company file may trail the index by one fetch: a prefix).
+    // Mid-session Yahoo's newest bar is stamped with the fetch time (e.g. 14:18:49), and a later fetch
+    // replaces it with the regular 5-min bar (14:20): so a company file's LAST bar may be such an
+    // in-progress bar, lying inside the index's bar at that slot. The companies refresh every 30 min
+    // and the index every 10, so without this the index workflow went red between company runs.
+    if (same) ok(S.t.length <= same.bars.length && S.t.every((t, k) => t === same.bars[k][0] ||
+        (k === S.t.length - 1 && k > 0 && t > same.bars[k - 1][0] && t < same.bars[k][0])), `${key} ${S.date}: company clock = ${key}'s bar times`);
   }
   const lastC = co.sessions[co.sessions.length - 1];
   ok(lastC.m.filter(Boolean).length >= CELL_MIN[key], `${key} ${lastC.date}: at least ${CELL_MIN[key]} companies priced (${lastC.m.filter(Boolean).length})`);
