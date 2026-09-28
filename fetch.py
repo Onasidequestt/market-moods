@@ -68,26 +68,105 @@ def build():
     return {"generated_at": int(time.time()), "source": "Yahoo Finance chart API (delayed)",
             "indexes": out}
 
-# ---------- companies inside the S&P 500 blob ----------
-# ponytail: the member list is read from Wikipedia's "List of S&P 500 companies" table and sizes
-# from Yahoo's quote endpoint (needs a session cookie + crumb, unofficial). Ceiling: fine for a
-# prototype refreshed every 10 min. Upgrade path: the index provider's constituent file + the
-# same licensed feed as the indexes, on the client's own host.
+# ---------- companies inside each index blob ----------
+# ponytail: member lists come from free, unofficial sources (Wikipedia / nasdaq.com screener /
+# an iShares ETF's holdings CSV) and sizes from Yahoo's quote endpoint (session cookie + crumb,
+# also unofficial). Ceiling: fine for a prototype refreshed every 10 min. Upgrade path: each
+# index provider's own constituent file + a licensed feed, on the client's own host.
 ROSTER_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+DOW_URL = "https://en.wikipedia.org/wiki/List_of_Dow_Jones_Industrial_Average_companies"
+NASDAQ_URL = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=8000&exchange=nasdaq&download=true"
+# ponytail: IWM (iShares Russell 2000 ETF) holdings are a widely-used FREE stand-in for the Russell
+# 2000's own (paid, FTSE Russell) member list. Ceiling: an ETF's holdings can lag/differ slightly
+# from the index (cash, sampling, rebalancing lag). Upgrade path: FTSE Russell's licensed list.
+RUSSELL_URL = ("https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
+               "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund")
 SPARK = "https://query1.finance.yahoo.com/v7/finance/spark?symbols={syms}&range={rng}&interval={iv}"
 UA = {"User-Agent": "Mozilla/5.0 market-moods"}
 
-def roster():
-    """[(yahoo symbol, name, sector)] from the constituents table."""
-    req = urllib.request.Request(ROSTER_URL, headers={"User-Agent": "market-moods/0.1 (prototype)"})
+# how many companies each index's inside view can show, and where its roster comes from
+INDEX_CAP = {"dow": 30, "sp500": 500, "nasdaq": 500, "russell": 500}
+
+def _wiki_table(url, anchor):
+    req = urllib.request.Request(url, headers={"User-Agent": "market-moods/0.1 (prototype)"})
     page = urllib.request.urlopen(req, timeout=30).read().decode()
-    tab = page[page.index('id="constituents"'):]; tab = tab[:tab.index("</table>")]
+    tab = page[page.index(anchor):]; tab = tab[:tab.index("</table>")]
     out = []
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", tab, re.S)[1:]:
-        c = [html.unescape(re.sub(r"<[^>]+>", "", x)).strip() for x in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
-        if len(c) >= 3: out.append((c[0].replace(".", "-"), c[1], c[2]))
-    if len(out) < 480: raise ValueError(f"roster has {len(out)} members, expected ~503")
+        c = [html.unescape(re.sub(r"<[^>]+>", "", x)).strip() for x in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)]
+        if c: out.append(c)
     return out
+
+def roster():
+    """([(yahoo symbol, name, sector)], precap=None) — the S&P 500 constituents table."""
+    out = []
+    for c in _wiki_table(ROSTER_URL, 'id="constituents"'):
+        if len(c) >= 3: out.append((c[0].replace(".", "-"), c[1], c[2]))
+    if len(out) < 480: raise ValueError(f"sp500 roster has {len(out)} members, expected ~503")
+    return out, None
+
+def roster_dow():
+    """([(symbol, name, sector)], None) — all 30 Dow members: "List of Dow Jones Industrial
+    Average companies" constituents table (Company, Exchange, Symbol, Sector, ...)."""
+    out = []
+    for c in _wiki_table(DOW_URL, 'id="constituents"'):
+        if len(c) >= 4: out.append((c[2].replace(".", "-"), c[0], c[3]))
+    if len(out) != 30: raise ValueError(f"dow roster has {len(out)} members, expected 30")
+    return out, None
+
+def roster_nasdaq():
+    """([(symbol, name, sector)], precap) — nasdaq.com screener (equities only; ETFs/units/
+    warrants/test issues filtered). precap comes free in the same response: no extra HTTP call."""
+    req = urllib.request.Request(NASDAQ_URL, headers={
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept": "application/json"})
+    rows = json.load(urllib.request.urlopen(req, timeout=30))["data"]["rows"]
+    out, precap = [], {}
+    for r in rows:
+        sym, name = r.get("symbol", ""), r.get("name", "")
+        if not sym or not name: continue
+        if re.search(r"\b(ETF|Fund|Trust|Warrants?|Units?|Notes?)\b", name, re.I): continue
+        if "^" in sym or "." in sym or re.search(r"Test Issue", name, re.I): continue
+        out.append((sym, name, r.get("sector") or ""))
+        try: cap = float(str(r.get("marketCap") or 0).replace(",", ""))
+        except ValueError: cap = 0
+        if cap: precap[sym] = cap
+    if len(out) < 2000: raise ValueError(f"nasdaq roster has {len(out)} members, expected 2000+")
+    return out, precap
+
+def roster_russell():
+    """([(symbol, name, sector)], precap) — IWM (iShares Russell 2000 ETF) holdings CSV, equity
+    rows only. precap = each holding's Market Value in the fund: a proxy for company size (the
+    fund is cap-weighted), not the company's real market cap. Used only to pick the top 500
+    before spending HTTP calls on prices; the page's "bigger = bigger company" size still uses
+    the real market cap fetched afterward via caps()."""
+    req = urllib.request.Request(RUSSELL_URL, headers=UA)
+    text = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+    lines = text.splitlines()
+    hdr = next((i for i, l in enumerate(lines) if l.startswith("Ticker,")), None)
+    if hdr is None: raise ValueError("IWM csv: no header row found")
+    import csv, io
+    rows = list(csv.reader(io.StringIO("\n".join(lines[hdr:]))))
+    cols = rows[0]
+    i_t, i_n, i_s, i_a = cols.index("Ticker"), cols.index("Name"), cols.index("Sector"), cols.index("Asset Class")
+    i_v = cols.index("Market Value") if "Market Value" in cols else None
+    out, precap = [], {}
+    for r in rows[1:]:
+        if len(r) <= max(i_t, i_n, i_s, i_a): continue
+        if r[i_a].strip() != "Equity": continue
+        sym = r[i_t].strip()
+        if not sym or not re.fullmatch(r"[A-Z.\-]{1,6}", sym): continue
+        sym = sym.replace(".", "-")
+        out.append((sym, r[i_n].strip(), r[i_s].strip()))
+        if i_v is not None:
+            try: v = float(r[i_v].replace(",", "").replace("$", ""))
+            except ValueError: v = 0
+            if v: precap[sym] = v
+    if len(out) < 1500: raise ValueError(f"russell (IWM) roster has {len(out)} members, expected 1500+")
+    return out, precap
+
+ROSTERS = {"dow": roster_dow, "sp500": roster, "nasdaq": roster_nasdaq, "russell": roster_russell}
 
 def caps(syms):
     """{symbol: market value in $} from Yahoo's quote endpoint, 50 symbols per call."""
@@ -100,24 +179,35 @@ def caps(syms):
     for i in range(0, len(syms), 50):
         u = ("https://query1.finance.yahoo.com/v7/finance/quote?fields=marketCap&symbols="
              + ",".join(syms[i:i + 50]) + "&crumb=" + urllib.request.quote(crumb))
-        for r in json.load(op.open(u, timeout=20))["quoteResponse"]["result"]:
+        for r in _retry(lambda u=u: json.load(op.open(u, timeout=20))["quoteResponse"]["result"]):
             if r.get("marketCap"): out[r["symbol"]] = r["marketCap"]
-        time.sleep(0.3)
+        time.sleep(0.4)
     return out
+
+def _retry(fn, tries=3, delay=1.5):
+    """A flaky unofficial endpoint gets a few retries with backoff before we give up the batch —
+    a lot cheaper than failing the whole --companies run over one dropped connection."""
+    for attempt in range(tries):
+        try: return fn()
+        except Exception:
+            if attempt == tries - 1: raise
+            time.sleep(delay * (attempt + 1))
 
 def spark(syms, rng, iv):
     """{symbol: [(unix, close), ...]} — Yahoo's spark endpoint takes 20 symbols per call."""
     out = {}
     for i in range(0, len(syms), 20):
         u = SPARK.format(syms=",".join(syms[i:i + 20]), rng=rng, iv=iv)
-        with urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=20) as r:
-            for x in json.load(r)["spark"]["result"]:
-                res = (x.get("response") or [None])[0]
-                if res: out[x["symbol"]] = pairs(res)
-        time.sleep(0.3)
+        def call(u=u):
+            with urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=20) as r:
+                return json.load(r)["spark"]["result"]
+        for x in _retry(call):
+            res = (x.get("response") or [None])[0]
+            if res: out[x["symbol"]] = pairs(res)
+        time.sleep(0.5)
     return out
 
-def shape_companies(members, caps_, sessions, intraday, daily):
+def shape_companies(members, caps_, sessions, intraday, daily, index="sp500"):
     """Pure. members [(sym,name,sector)], caps_ {sym: $}, sessions = the S&P 500 index's
     [{date, bars}], intraday/daily {sym: [(unix, close)]}. Each company's move on each day is
     measured from ITS official close on the trading day before and laid on the index's own bar
@@ -147,18 +237,35 @@ def shape_companies(members, caps_, sessions, intraday, daily):
                 bp.append(round((lastc / prev - 1) * 1e4))
             row.append(bp)
         out.append({"date": S["date"], "t": grid, "m": row})
-    return {"index": "sp500", "companies": comps, "sessions": out}
+    return {"index": index, "companies": comps, "sessions": out}
 
-def build_companies(market):
-    sp = next(i for i in market["indexes"] if i["key"] == "sp500")
-    members = roster()
+# where each index's member list comes from, in the words shown on the page (rule 6: honest sourcing)
+SOURCE_NOTE = {
+    "dow": "Members: Wikipedia's Dow Jones Industrial Average components table (all 30). "
+           "Prices and market values: Yahoo Finance (delayed)",
+    "sp500": "Members: Wikipedia's list of S&P 500 companies. Prices and market values: Yahoo Finance (delayed)",
+    "nasdaq": "Members: nasdaq.com's stock screener (Nasdaq-listed equities, top 500 by market value). "
+              "Prices and market values: Yahoo Finance (delayed)",
+    "russell": "Members: the iShares Russell 2000 ETF (IWM)'s holdings, a free stand-in for FTSE "
+               "Russell's own (paid) list, top 500 by fund position. Prices and market values: Yahoo Finance (delayed)",
+}
+# rough floor for "did pricing actually work" per index, scaled off INDEX_CAP (rule 2: a check that can verify)
+MIN_PRICED = {"dow": 27, "sp500": 450, "nasdaq": 400, "russell": 400}
+
+def build_companies(market, index="sp500"):
+    ix = next(i for i in market["indexes"] if i["key"] == index)
+    members, precap = ROSTERS[index]()
+    cap_n = INDEX_CAP[index]
+    if precap is not None and len(members) > cap_n:
+        # rank by the free precap first so we only spend Yahoo calls (caps + spark) on the ones we'll show
+        members = sorted(members, key=lambda m: -precap.get(m[0], 0))[:cap_n]
     syms = [m[0] for m in members]
     c = caps(syms)
-    data = shape_companies(members, c, sp["sessions"], spark(syms, "5d", "5m"), spark(syms, "1mo", "1d"))
+    data = shape_companies(members, c, ix["sessions"], spark(syms, "5d", "5m"), spark(syms, "1mo", "1d"), index)
     have = sum(1 for x in data["sessions"][-1]["m"] if x)
-    if have < 450: raise ValueError(f"only {have} companies priced on {data['sessions'][-1]['date']}")
-    data.update(generated_at=int(time.time()),
-                source="Members: Wikipedia list of S&P 500 companies. Prices and market values: Yahoo Finance (delayed)")
+    if have < MIN_PRICED[index]:
+        raise ValueError(f"{index}: only {have} companies priced on {data['sessions'][-1]['date']}")
+    data.update(generated_at=int(time.time()), source=SOURCE_NOTE[index])
     return data
 
 def selfcheck():
@@ -201,17 +308,25 @@ def selfcheck():
                          {"AAA": [(d24, 200.0), (t0, 199.0)], "EEE": [(d23, 20.0), (t0, 30.0)]})
     assert c2["sessions"][0]["m"][1] is None, c2["sessions"][0]["m"]
     assert c2["sessions"][1]["m"] == [[50], [1000]], c2["sessions"][1]["m"]   # vs 09-25 closes 199 and 30
-    print("✓ fetch selfcheck: 13 asserts")
+    # generalised to any index: the "index" field follows the key, not a hardcoded "sp500"
+    c3 = shape_companies([("AAA", "Ay", "Y")], {"AAA": 1e12}, sess, {"AAA": intr_c["AAA"]}, daily_c, "dow")
+    assert c3["index"] == "dow", c3["index"]
+    # INDEX_CAP/ranking: nasdaq/russell trim to top N by precap BEFORE spending HTTP calls on prices
+    assert INDEX_CAP == {"dow": 30, "sp500": 500, "nasdaq": 500, "russell": 500}, INDEX_CAP
+    print("✓ fetch selfcheck: 16 asserts")
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv: selfcheck(); sys.exit(0)
     if "--companies" in sys.argv:
         here = pathlib.Path(__file__).parent / "data"
-        data = build_companies(json.loads((here / "market.json").read_text()))
-        (here / "companies.json").write_text(json.dumps(data, separators=(",", ":")) + "\n")
+        i = sys.argv.index("--companies")
+        key = sys.argv[i + 1] if len(sys.argv) > i + 1 and sys.argv[i + 1] in ROSTERS else "sp500"
+        fname = "companies.json" if key == "sp500" else f"companies-{key}.json"   # sp500 URL unchanged
+        data = build_companies(json.loads((here / "market.json").read_text()), key)
+        (here / fname).write_text(json.dumps(data, separators=(",", ":")) + "\n")
         last = data["sessions"][-1]; up = sum(1 for x in last["m"] if x and x[-1] > 0)
-        print(f'companies: {len(data["companies"])} members, {len(data["sessions"])} days, '
-              f'{last["date"]}: {up} up of {sum(1 for x in last["m"] if x)} priced')
+        print(f'companies[{key}]: {len(data["companies"])} members, {len(data["sessions"])} days, '
+              f'{last["date"]}: {up} up of {sum(1 for x in last["m"] if x)} priced -> data/{fname}')
         sys.exit(0)
     out = pathlib.Path(sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else
                        pathlib.Path(__file__).parent / "data" / "market.json")

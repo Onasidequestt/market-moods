@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0a0610">
 <title>Market Moods</title>
-<meta name="description" content="A moving picture of the mood of the US stock market: the Dow, S&P 500, Nasdaq and Russell 2000 as lava, with the S&P 500's companies inside.">
+<meta name="description" content="A moving picture of the mood of the US stock market: the Dow, S&P 500, Nasdaq and Russell 2000 as lava, with each index's own companies inside.">
 <style>
   :root {
     --bg: #0a0610;
@@ -72,6 +72,7 @@
   .cellctl { display: none; gap: 8px 16px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
   body.incell .cellctl { display: flex; }
   .seg { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .seg[hidden] { display: none; }
   .seg .lbl2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-right: 2px; }
   .btn.opt { height: 28px; padding: 0 11px; font-size: 12px; color: var(--ink-2); }
   .btn.opt[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-color: var(--ink); }
@@ -109,7 +110,7 @@
   .idx .lvl { font-size: 12px; color: var(--ink-2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .idx .chop { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
 
-  .notice { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100% - 32px));
+  .notice { position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%); width: min(420px, calc(100% - 32px));
     text-align: center; color: var(--ink-2); font-size: 15px; display: none; }
   .notice.on { display: block; }
 
@@ -186,8 +187,8 @@
 
   <footer>
     <div class="cellctl" id="cellctl">
-      <span class="seg" role="group" aria-label="How many companies"><span class="lbl2">Show</span>
-        <button class="btn opt" type="button" data-top="50">Top 50</button><button class="btn opt" type="button" data-top="100">Top 100</button><button class="btn opt" type="button" data-top="500">All 500</button></span>
+      <span class="seg" role="group" aria-label="How many companies" id="cellShowSeg"><span class="lbl2">Show</span>
+        <button class="btn opt" type="button" data-top="50">Top 50</button><button class="btn opt" type="button" data-top="100">Top 100</button><button class="btn opt" type="button" data-top="500" id="cellTopAllBtn">All 500</button></span>
       <span class="seg" role="group" aria-label="What blob size means"><span class="lbl2">Size</span>
         <button class="btn opt" type="button" data-size="cap">Company value</button><button class="btn opt" type="button" data-size="move">Size of move</button></span>
     </div>
@@ -212,7 +213,7 @@
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
-    <dt>Inside</dt><dd>The specks inside the S&amp;P 500 are its biggest companies. Tap the blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. A white ring marks a company moving against the index. "All 500" shows every member (a few companies have two share classes).</dd>
+    <dt>Inside</dt><dd>Every index has its companies inside it now. Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500, Nasdaq and Russell 2000 show its top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings and the Russell 2000 has ~2,000 — both trimmed to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
   <div class="ramp-l"><span>−1%</span><span>−0.5%</span><span>0</span><span>+0.5%</span><span>+1%</span></div>
@@ -232,7 +233,11 @@
   const REPLAY_SECONDS = reduced ? 120 : 60;   // one whole trading day
   const HOLD_SECONDS = 4;                       // pause on the close before looping
   const SHORT = { dow: "Dow", sp500: "S&P 500", nasdaq: "Nasdaq", russell: "Russell" };
-  const CELL_KEY = "sp500";                     // the index whose companies ride inside it (companies.json)
+  // every index's companies ride inside its own blob now; sp500 keeps its original URL (no migration
+  // needed), the other three are separate lazily-loaded files so opening one doesn't fetch all four.
+  const CELL_CAP = { dow: 30, sp500: 500, nasdaq: 500, russell: 500 };   // mirrors fetch.py's INDEX_CAP
+  const CELL_KEYS = Object.keys(CELL_CAP);
+  const cellUrl = k => k === "sp500" ? "data/companies.json" : `data/companies-${k}.json`;
   const DROPS = 5;                              // blobs per index: one core + four satellites
   const hex = c => "#" + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("");
   const fmtPct = p => (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(2) + "%";
@@ -253,10 +258,10 @@
       el.className = "idx";
       el.innerHTML = `<div class="name"><span class="chip"></span><span class="long"></span><span class="short"></span></div>
         <div class="pct num"></div><div class="lvl num"></div><div class="chop"></div>`;
-      if (ix.key === CELL_KEY) {
+      if (CELL_KEYS.includes(ix.key)) {
         const b = document.createElement("button"); b.type = "button"; b.className = "look";
         b.innerHTML = '<span class="long">Look inside ›</span><span class="short">Inside ›</span>';
-        el.appendChild(b); el.onclick = () => { if (comp) openCell(); };
+        el.appendChild(b); el.onclick = () => openCell(ix.key);
       }
       el.querySelector(".long").textContent = ix.name;
       el.querySelector(".short").textContent = SHORT[ix.key] || ix.name;
@@ -298,7 +303,14 @@
       $("timeline").hidden = mode !== "replay";
       $("days").hidden = mode !== "replay" || days.length < 2;   // before the first draw: it measures the footer
       step(0); ui(); if (gl) draw(); // numbers and lamp show at once, not after the first slow frames
-      if (!comp || mode === "live") loadCompanies();   // past days never change: fetch them once
+      // eager only for sp500 (its lamp specks preview, ~290 KB gzip); the other three load lazily,
+      // only once their door is opened, so the lamp page never pulls all four company files up front
+      if (firstLoad) CELL_KEYS.forEach(k => k !== "sp500" && probeCell(k));
+      if (!(cellState.sp500 && cellState.sp500.comp) || mode === "live") loadCompanies("sp500");
+      // #cell&idx=<key> opens once <key>'s data is in (loadCompanies opens it on success, never on
+      // failure); for keys other than sp500 that means asking for it explicitly here
+      if (firstLoad && wantCellOnLoad && cellKey !== "sp500") loadCompanies(cellKey);
+      else if (inCell && !(cellState[cellKey] && cellState[cellKey].comp)) loadCompanies(cellKey);
       $("src").textContent = `Data: index levels from ${d.source.replace(/ \(delayed\)$/, "")}, delayed. Last fetched ${fmtET(d.generated_at, { weekday: "short", hour: "numeric", minute: "2-digit" })} ET. When the market is closed, the lamp replays a real trading day from the past week: pick one above the timeline.`;
     } catch (e) {
       if (!data) {
@@ -508,7 +520,7 @@
     if (tags.children.length !== data.indexes.length) {
       tags.textContent = "";
       data.indexes.forEach(ix => { const s = document.createElement("span"); s.textContent = SHORT[ix.key] || ix.name;
-        if (ix.key === CELL_KEY) { s.className = "door"; s.title = "Look inside"; s.onclick = e => { e.stopPropagation(); if (comp) openCell(); }; }
+        if (CELL_KEYS.includes(ix.key)) { s.className = "door"; s.title = "Look inside"; s.onclick = e => { e.stopPropagation(); openCell(ix.key); }; }
         tags.appendChild(s); });
     }
     lanes.forEach((L, i) => { if (L.tagX == null) return; const s = tags.children[i];
@@ -531,8 +543,10 @@
   // ---------- inside the S&P 500: one blob per member company ----------
   // Same rules as the lamp, one level down: colour = the company's move, height = up floats /
   // down sinks, motion = its own last hour's chop. Size = market value (or size of move).
-  const CELL_URL = "data/companies.json";
-  let comp = null, compErr = false, inCell = false, cellTop = 50, cellSize = "cap";
+  let cellKey = "sp500", inCell = false, cellTop = 50, cellSize = "cap";
+  const cellState = {};                         // key -> { comp, err, loading }
+  const comp = () => (cellState[cellKey] || {}).comp || null;
+  const compErr = () => !!(cellState[cellKey] || {}).err;
   const cellNodes = new Map();                  // symbol -> node; positions persist across switches
   const cv = $("cell"), cx2 = cv.getContext("2d");
   let cvDpr = 1, cellG = null, specksN = 0;
@@ -542,33 +556,61 @@
   const fmtCap = v => v >= 1e12 ? "$" + (v / 1e12).toFixed(2) + "T" : "$" + Math.round(v / 1e9) + "B";
   const rgba = (c, a) => `rgba(${c.map(v => Math.round(clampN(v, 0, 1) * 255)).join(",")},${a})`;
 
-  async function loadCompanies() {
+  // a door only appears once we KNOW its file exists (a cheap HEAD, no body): never promise an
+  // inside view that turns out empty (rule 6). Probed once per key, for all four, right away —
+  // this costs a round trip, not a download, so it doesn't fight the lazy-load budget.
+  async function probeCell(key) {
+    const st = cellState[key] || (cellState[key] = {});
+    if (st.avail !== undefined) return;
+    try { const r = await fetch(cellUrl(key), { method: "HEAD", cache: "no-store" }); st.avail = r.ok; }
+    catch (e) { st.avail = false; }
+    if (!st.avail) st.err = true;
+    readoutDoors();
+  }
+  async function loadCompanies(key) {
+    const st = cellState[key] || (cellState[key] = {});
+    if (st.loading) return;
+    st.loading = true;
     try {
-      const r = await fetch(CELL_URL + "?t=" + Date.now(), { cache: "no-store" });
+      const r = await fetch(cellUrl(key) + "?t=" + Date.now(), { cache: "no-store" });
       if (!r.ok) throw new Error("HTTP " + r.status);
+      st.avail = true;
       const d = await r.json();
       if (!Array.isArray(d.companies) || !Array.isArray(d.sessions) || !d.sessions.length) throw new Error("incomplete companies");
-      if (comp && comp.generated_at === d.generated_at) return;
-      comp = d; compErr = false;
-      $("src2").textContent = `Companies: members from Wikipedia's list of S&P 500 companies; prices and market values from Yahoo Finance, delayed. Last fetched ${fmtET(d.generated_at, { weekday: "short", hour: "numeric", minute: "2-digit" })} ET.`;
-      $("src2").hidden = false;
-      const h = location.hash;
-      const t = (/top=(500|100|50)\b/.exec(h) || [])[1]; if (t) cellTop = +t;
-      if (/size=move/.test(h)) cellSize = "move";
-      if (/(^#|&)cell(&|$)/.test(h) && !inCell) openCell();
-    } catch (e) { if (!comp) compErr = true; console.warn("market-moods companies:", e.message); }
-    readoutDoors(); cellUi();
+      if (!(st.comp && st.comp.generated_at === d.generated_at)) {
+        st.comp = d; st.err = false;
+        if (key === cellKey) {
+          $("src2").textContent = `${d.source || "Companies data"}. Last fetched ${fmtET(d.generated_at, { weekday: "short", hour: "numeric", minute: "2-digit" })} ET.`;
+          $("src2").hidden = false;
+        }
+      }
+      // only open the hash's requested view once its data is actually there — a #cell link never
+      // forces open a broken/empty inside view; the lamp just keeps showing (rule 6)
+      if (key === cellKey && wantCellOnLoad && !inCell) openCell(key);
+    } catch (e) { if (!st.comp) { st.err = true; st.avail = false; } console.warn(`market-moods companies[${key}]:`, e.message); }
+    st.loading = false;
+    readoutDoors();
+    if (key !== cellKey) return;
+    cellUi();
     if (lanes.length) inCell ? cellDraw() : specksDraw();   // show at once, not on the next frame
   }
-  function readoutDoors() { data && data.indexes.forEach(ix => ix.el && ix.el.classList.toggle("hasdoor", ix.key === CELL_KEY && !!comp)); }
-  const cellSession = () => comp && comp.sessions.find(x => x.date === curDay);
+  const wantCellOnLoad = (() => {   // hash can name the index to open: #cell&idx=dow&top=100&size=move
+    const h = location.hash;
+    const idx = (/(^#|&)idx=(dow|sp500|nasdaq|russell)\b/.exec(h) || [])[2]; if (idx) cellKey = idx;
+    const t = (/top=(500|100|50)\b/.exec(h) || [])[1]; if (t) cellTop = +t;
+    if (/size=move/.test(h)) cellSize = "move";
+    return /(^#|&)cell(&|$)/.test(h);
+  })();
+  function readoutDoors() { data && data.indexes.forEach(ix => ix.el && ix.el.classList.toggle("hasdoor", CELL_KEYS.includes(ix.key) && !!(cellState[ix.key] && cellState[ix.key].avail))); }
+  const cellSession = () => comp() && comp().sessions.find(x => x.date === curDay);
   // the members drawn today: biggest first, only those priced that day (null = no data, not flat)
   function cellMembers(S) {
-    const out = [];
-    const cap = cellTop >= 500 ? Infinity : cellTop;             // "All 500" = every member priced that day
-    for (let k = 0; k < comp.companies.length && out.length < cap; k++) if (S.m[k]) out.push({ c: comp.companies[k], m: S.m[k] });
+    const out = [], c = comp(); if (!c) return out;
+    const cap = cellTop >= 500 ? Infinity : cellTop;             // "All 500"/"All 30" = every member priced that day
+    for (let k = 0; k < c.companies.length && out.length < cap; k++) if (S.m[k]) out.push({ c: c.companies[k], m: S.m[k] });
     return out;
   }
+  const cellLaneIdx = () => data ? data.indexes.findIndex(i => i.key === cellKey) : -1;
   const cellPos = S => Math.min(pos, S.t.length - 1);   // today's company file can trail the index by a fetch
 
   function cellGeom() {
@@ -630,12 +672,12 @@
   }
 
   function cellDraw() {
-    const g = cellG || cellGeom(), L = lanes[1], ctx = cx2;
+    const g = cellG || cellGeom(), L = lanes[cellLaneIdx()] || lanes[1], ctx = cx2;
     ctx.setTransform(cvDpr, 0, 0, cvDpr, 0, 0);
     const bg = ctx.createLinearGradient(0, 0, 0, innerHeight);
     bg.addColorStop(0, "rgb(9,5,14)"); bg.addColorStop(1, "rgb(18,9,20)");
     ctx.fillStyle = bg; ctx.fillRect(0, 0, innerWidth, innerHeight);
-    // the membrane = the S&P 500 itself: its colour, and it breathes with its own chop
+    // the membrane = the index itself: its colour, and it breathes with its own chop
     const amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
     ctx.beginPath();
     for (let i = 0; i <= 96; i++) {
@@ -671,15 +713,24 @@
     cv.dataset.nodes = n;
   }
 
-  // in the lamp: the S&P 500's biggest companies ride inside its blob as specks
+  // in the lamp: the S&P 500's biggest companies ride inside its blob as specks.
+  // ponytail: specks stay S&P-only so the lamp never eager-fetches all four company files (the
+  // ask was the INSIDE view for all four; this preview is a bonus). Ceiling: no lamp preview for
+  // Dow/Nasdaq/Russell. Upgrade path: a tiny top-50-symbols-only file per index, fetched once and
+  // cheap enough to load eagerly like sp500's.
   function specksDraw() {
     const ctx = cx2; ctx.setTransform(cvDpr, 0, 0, cvDpr, 0, 0); ctx.clearRect(0, 0, innerWidth, innerHeight);
     specksN = 0;
-    const S = cellSession(); if (!S || !gl || mode === "none") { cv.dataset.specks = 0; return; }
+    const c = cellState.sp500 && cellState.sp500.comp; if (!c) { cv.dataset.specks = 0; return; }
+    const S = c.sessions.find(x => x.date === curDay);
+    if (!S || !gl || mode === "none") { cv.dataset.specks = 0; return; }
     const H = innerHeight, b = DROPS * 3;                       // lane 1 (S&P 500), drop 0 = its core
     const X = balls[b] * H, Y = H - balls[b + 1] * H, R = balls[b + 2] * H;
     if (R < 18) { cv.dataset.specks = 0; return; }
-    const p = cellPos(S), list = cellMembers({ m: S.m }).slice(0, 50), top = list.length ? list[0].c.cap : 1;
+    const p = Math.min(pos, S.t.length - 1);
+    const list = [];
+    for (let k = 0; k < c.companies.length && list.length < 50; k++) if (S.m[k]) list.push({ c: c.companies[k], m: S.m[k] });
+    const top = list.length ? list[0].c.cap : 1;
     const L = lanes[1];
     for (const x of list) {
       const pct = Mood.movePct(x.m, p), sd = hashS(x.c.s);
@@ -697,31 +748,41 @@
   }
 
   function cellUi() {
+    const ixName = (data && data.indexes.find(i => i.key === cellKey) || {}).name || SHORT[cellKey] || cellKey;
+    const allN = CELL_CAP[cellKey];
+    $("cellWord").textContent = "Inside the " + ixName;
+    // the Dow only has 30 members: no 50/100/500 choice, and the page says so rather than padding
+    const small = allN <= 100;
+    $("cellShowSeg").hidden = small;
+    if (small && cellTop !== allN) cellTop = allN;
     const sizeWord = cellSize === "cap" ? "bigger company" : "bigger move";   // the key follows the size switch
     $("cellKeyLong").textContent = `Each blob is one company · colour = its move · higher = up · bigger = ${sizeWord} · restless = choppy · white ring = moving against the index · tap one for details`;
     $("cellKeyShort").textContent = `one blob per company · colour = move · high = up · big = ${cellSize === "cap" ? "value" : "move"} · ring = against · tap for details`;
     document.querySelectorAll("#cellctl [data-top]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.top === cellTop));
     document.querySelectorAll("#cellctl [data-size]").forEach(b => b.setAttribute("aria-pressed", b.dataset.size === cellSize));
     if (!inCell || !data) return;
-    const S = comp && cellSession(), L = lanes[1], note = $("notice");
+    const c = comp(), S = c && cellSession(), L = lanes[cellLaneIdx()], note = $("notice");
     let msg = "";
-    if (compErr) msg = "Couldn't load the company data just now. It will try again with the next refresh.";
-    else if (!comp) msg = "Loading the S&P 500's companies…";
-    else if (!S) msg = mode === "live" ? "Today's company data hasn't arrived yet. It follows the index within a fetch or two."
+    if (compErr()) msg = "Couldn't load the company data just now. It will try again with the next refresh.";
+    else if (!c) msg = `Loading the ${ixName}'s companies…`;
+    else if (small) msg = `The ${ixName} has only ${allN} members — showing all of them.`;
+    if (c && !S) msg = mode === "live" ? "Today's company data hasn't arrived yet. It follows the index within a fetch or two."
       : "No company data for " + dayLabel(curDay, { weekday: "long", month: "short", day: "numeric" }) + ". Pick another day below.";
     note.textContent = msg; note.classList.toggle("on", !!msg);
-    if (!S || !L) { $("cellSub").textContent = "S&P 500 " + (L ? fmtPct(L.rawPct) : ""); cv.dataset.pos = ""; return; }
+    if (!S || !L) { $("cellSub").textContent = ixName + " " + (L ? fmtPct(L.rawPct) : ""); cv.dataset.pos = ""; return; }
     const p = cellPos(S), list = cellMembers(S);
     let up = 0, ag = 0, big = null;
     for (const x of list) { const q = Mood.movePct(x.m, p); if (q > 0) up++; if (Mood.against(q, L.rawPct)) { ag++; if (!big) big = [x.c, q]; } }
     const behind = S.t.length - 1 < pos ? " · companies to " + fmtET(S.t[S.t.length - 1], { hour: "numeric", minute: "2-digit" }) + " ET" : "";
-    $("cellSub").textContent = `S&P 500 ${fmtPct(L.rawPct)} · ${up} of ${list.length} companies rising · ${ag} moving against it` +
+    $("cellSub").textContent = `${ixName} ${fmtPct(L.rawPct)} · ${up} of ${list.length} companies rising · ${ag} moving against it` +
       (big ? ` (biggest: ${big[0].s} ${fmtPct(big[1])})` : "") + behind;
     cv.dataset.pos = p.toFixed(4);                               // the moment the caption counts (browser-check.sh)
   }
 
-  function openCell() {
-    if (inCell) return;
+  function openCell(key) {
+    if (key && key !== cellKey) { cellKey = key; cellNodes.clear(); }
+    if (!(cellState[cellKey] && cellState[cellKey].comp)) loadCompanies(cellKey);
+    if (inCell) { cellStep(0); cellDraw(); cellUi(); return; }
     inCell = true; document.body.classList.add("incell"); document.body.classList.remove("bare");
     $("backBtn").hidden = false; cellNodes.clear(); cellStep(0); cellDraw(); cellUi();
   }
@@ -763,8 +824,13 @@
     $("playIcon").innerHTML = paused ? '<path d="M4 2l10 6-10 6z"/>' : '<path d="M4 2h3v12H4zm5 0h3v12H9z"/>';
   };
   canvas.addEventListener("click", e => {
-    const H = innerHeight, b = DROPS * 3;
-    if (comp && lanes.length && Math.hypot(e.clientX - balls[b] * H, e.clientY - (H - balls[b + 1] * H)) < balls[b + 2] * H * 1.5) openCell();
+    const H = innerHeight;
+    const hit = data && lanes.length && data.indexes.find((ix, i) => {
+      if (!CELL_KEYS.includes(ix.key)) return false;
+      const b = i * DROPS * 3;
+      return Math.hypot(e.clientX - balls[b] * H, e.clientY - (H - balls[b + 1] * H)) < balls[b + 2] * H * 1.5;
+    });
+    if (hit) openCell(hit.key);
     else document.body.classList.toggle("bare");
   });
   $("chrome").addEventListener("click", e => { if (e.target === $("chrome")) document.body.classList.toggle("bare"); });

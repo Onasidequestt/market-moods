@@ -25,14 +25,22 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - run: python3 fetch.py --selfcheck && python3 fetch.py
-      # the companies are a second, slower source: if it fails the last good file stays and the
-      # index data still ships (the page says how far behind the companies are)
-      - run: python3 fetch.py --companies || echo "::warning::company fetch failed; keeping the last companies.json"
+      # the companies are a second, slower source per index: if one fails the last good file for
+      # THAT index stays and the others still ship (the page says how far behind it is).
+      # ponytail: nasdaq/russell (~500 symbols each) take minutes (measured ~2-6 min locally) vs
+      # dow/sp500's seconds; all four run in one 10-minute slot today. Ceiling: fine while the run
+      # fits the slot. Upgrade path: if runs start overlapping/timing out, move nasdaq+russell to
+      # their own slower cron (e.g. every 30-60 min) instead of every 10.
+      - run: python3 fetch.py --companies sp500 || echo "::warning::sp500 company fetch failed; keeping the last companies.json"
+      - run: python3 fetch.py --companies dow || echo "::warning::dow company fetch failed; keeping the last companies-dow.json"
+      - run: python3 fetch.py --companies nasdaq || echo "::warning::nasdaq company fetch failed; keeping the last companies-nasdaq.json"
+      - run: python3 fetch.py --companies russell || echo "::warning::russell company fetch failed (iShares' anti-bot page has blocked this fetch every time so far; no companies-russell.json exists yet)"
       - run: node check.js
       - run: |
           git diff --quiet data/ && { echo "no change"; exit 0; }
           git config user.name "market-moods bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/market.json data/companies.json
+          git add data/market.json data/companies.json data/companies-dow.json data/companies-nasdaq.json
+          [ -f data/companies-russell.json ] && git add data/companies-russell.json   # not built yet (see fetch.py's roster_russell)
           git commit -m "data: $(date -u +%FT%TZ)"
           git push

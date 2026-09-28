@@ -16,6 +16,9 @@ mkdir -p "$T/nofs"; cp mood.js "$T/nofs/"
 sed 's|<head>|<head><script>Element.prototype.requestFullscreen = undefined;</script>|' index.html > "$T/nofs/index.html"
 # the index data but no company file: the inside view must not pretend
 mkdir -p "$T/nocomp/data"; cp index.html mood.js "$T/nocomp/"; cp data/market.json "$T/nocomp/data/"
+# how many indexes actually have a companies file right now (sp500 always companies.json; the
+# other three are companies-<key>.json) — the door count check follows what's really on disk
+NDOORS=$(ls data/companies.json data/companies-dow.json data/companies-nasdaq.json data/companies-russell.json 2>/dev/null | wc -l | tr -d ' ')
 # the days the company file covers: its last day, and its worst S&P 500 day (a down day inside and out)
 read -r D_LAST D_DOWN <<EOF2
 $(python3 -c "
@@ -48,9 +51,11 @@ for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8766/#cell&day=$D_LAST&at=12:10" "$T/cell"
   shoot $SIZE "http://127.0.0.1:8766/#cell&top=500&day=$D_DOWN&at=15:00" "$T/cell500"
   shoot $SIZE "http://127.0.0.1:8766/.nocomp-check/#cell&day=$D_LAST&at=12:10" "$T/nocomp"
+  shoot $SIZE "http://127.0.0.1:8766/#cell&idx=dow&day=$D_LAST&at=12:10" "$T/celldow"
+  shoot $SIZE "http://127.0.0.1:8766/#cell&idx=nasdaq&top=500&day=$D_LAST&at=12:10" "$T/cellnasdaq"
   "$B" --headless --user-data-dir="$(mktemp -d)" --use-angle=swiftshader --enable-unsafe-swiftshader --window-size="$SIZE" \
     --virtual-time-budget=5000 --dump-dom "http://127.0.0.1:8766/#cell&size=move&day=$D_LAST&at=12:10" 2>/dev/null > "$T/cellmove.html"
-  python3 - "$T" "$SIZE" "$D_LAST" "$D_DOWN" <<'EOF' || RC=1
+  python3 - "$T" "$SIZE" "$D_LAST" "$D_DOWN" "$NDOORS" <<'EOF' || RC=1
 import re, sys, html
 from PIL import Image
 t, size = sys.argv[1], sys.argv[2]
@@ -109,35 +114,43 @@ fs_ok = re.search(r'<button[^>]*id="fsBtn"[^>]*>', open(f"{t}/ok.html").read())
 fs_no = re.search(r'<button[^>]*id="fsBtn"[^>]*>', open(f"{t}/nofs.html").read())
 if not fs_ok or "hidden" in fs_ok[0]: bad.append("full-screen button hidden in a browser that supports it")
 if not fs_no or "hidden" not in fs_no[0]: bad.append("full-screen button shown where fullscreen is missing (dead button)")
-# ---- inside the S&P 500 ----
+# ---- inside each index ----
 import json, math
-mk = json.load(open("data/market.json")); co = json.load(open("data/companies.json"))
+mk = json.load(open("data/market.json"))
+CO_FILE = {"dow": "companies-dow.json", "sp500": "companies.json", "nasdaq": "companies-nasdaq.json", "russell": "companies-russell.json"}
+CO = {}
+for k, fn in CO_FILE.items():
+    try: CO[k] = json.load(open(f"data/{fn}"))
+    except FileNotFoundError: pass
+co = CO.get("sp500")
 sp = [i for i in mk["indexes"] if i["key"] == "sp500"][0]
-def expect(date, p, top):  # the caption's numbers, counted here from the files (not from the page)
-    ss = [x for x in sp["sessions"] if x["date"] == date][0]; b = ss["bars"]
+def expect(key, date, p, top):  # the caption's numbers, counted here from the files (not from the page)
+    ix = [i for i in mk["indexes"] if i["key"] == key][0]
+    ss = [x for x in ix["sessions"] if x["date"] == date][0]; b = ss["bars"]
     i = min(max(int(p), 0), len(b) - 1); j = min(i + 1, len(b) - 1); f = min(max(p - i, 0), 1)
     ipct = ((b[i][1] + (b[j][1] - b[i][1]) * f) / ss["prev_close"] - 1) * 100
-    S = [x for x in co["sessions"] if x["date"] == date][0]
+    coK = CO[key]
+    S = [x for x in coK["sessions"] if x["date"] == date][0]
     rows = [r for r in S["m"] if r]; rows = rows if top >= 500 else rows[:top]
     def q(r):
         k = min(max(int(p), 0), len(r) - 1); l = min(k + 1, len(r) - 1); return (r[k] + (r[l] - r[k]) * min(max(p - k, 0), 1)) / 100
     qs = [q(r) for r in rows]
     agl = [k for k, x in enumerate(qs) if abs(x) >= .1 and abs(ipct) >= .1 and (x > 0) != (ipct > 0)]
-    names = [c["s"] for c, r in zip(co["companies"], S["m"]) if r]
+    names = [c["s"] for c, r in zip(coK["companies"], S["m"]) if r]
     return len(rows), sum(1 for x in qs if x > 0), len(agl), ipct, (names[agl[0]] if agl else None)
-def cell_check(nm, date, top):
+def cell_check(nm, key, date, top):
     dom = open(f"{t}/{nm}.html").read()
     if 'class="incell"' not in dom: bad.append(f"{nm}: #cell link did not open the inside view"); return None
-    sub = re.search(r'id="cellSub">S&amp;P 500 ([+−])(\d+\.\d\d)% · (\d+) of (\d+) companies rising · (\d+) moving against it(?: \(biggest: ([A-Z.-]+) [+−][\d.]+%\))?<', dom)
+    sub = re.search(r'id="cellSub">(.*?) ([+−])(\d+\.\d\d)% · (\d+) of (\d+) companies rising · (\d+) moving against it(?: \(biggest: ([A-Z.-]+) [+−][\d.]+%\))?<', dom)
     pos = re.search(r'id="cell"[^>]*data-pos="([\d.]+)"', dom); geo = re.search(r'id="cell"[^>]*data-cell="(\d+),(\d+),(\d+)"', dom)
     nodes = re.search(r'id="cell"[^>]*data-nodes="(\d+)"', dom)
     if not (sub and pos and geo and nodes): bad.append(f"{nm}: caption/pos/geometry missing"); return None
-    n, up, ag, ipct, bigname = expect(date, float(pos[1]), top)
-    if sub[6] != bigname: bad.append(f"{nm}: caption names {sub[6]} as the biggest against the index; the files say {bigname}")
-    got = (int(sub[4]), int(sub[3]), int(sub[5]))
+    n, up, ag, ipct, bigname = expect(key, date, float(pos[1]), top)
+    if sub[7] != bigname: bad.append(f"{nm}: caption names {sub[7]} as the biggest against the index; the files say {bigname}")
+    got = (int(sub[5]), int(sub[4]), int(sub[6]))
     if got != (n, up, ag): bad.append(f"{nm}: caption says {got[1]} of {got[0]} rising, {got[2]} against; the files say {up} of {n}, {ag}")
-    sp_pct = float(sub[2]) * (-1 if sub[1] == "−" else 1)
-    if abs(sp_pct - ipct) > 0.011: bad.append(f"{nm}: S&P {sp_pct}% vs {ipct:.3f}% from the file")
+    ix_pct = float(sub[3]) * (-1 if sub[2] == "−" else 1)
+    if abs(ix_pct - ipct) > 0.011: bad.append(f"{nm}: {key} {ix_pct}% vs {ipct:.3f}% from the file")
     if int(nodes[1]) != n: bad.append(f"{nm}: drew {nodes[1]} blobs, want {n}")
     # the blobs are really painted: bright, saturated pixels inside the membrane (its fill is dim)
     im = Image.open(f"{t}/{nm}.png").convert("RGB"); W, H = im.size; sc = H / int(size.split(",")[1])
@@ -149,16 +162,28 @@ def cell_check(nm, date, top):
                 if max(r_, g_, b_) > 150 and max(r_, g_, b_) - min(r_, g_, b_) > 70: lit += 1
     if lit < tot * 0.15: bad.append(f"{nm}: only {lit}/{tot} sampled pixels are wax inside the membrane")
     return f"{nm} {got[1]}/{got[0]} up, {got[2]} against, {lit * 100 // max(tot, 1)}% lit"
-c1 = cell_check("cell", sys.argv[3], 50); c2 = cell_check("cell500", sys.argv[4], 500)
+c1 = cell_check("cell", "sp500", sys.argv[3], 50); c2 = cell_check("cell500", "sp500", sys.argv[4], 500)
 if c2 and int(re.search(r"of (\d+) companies", open(f"{t}/cell500.html").read())[1]) <= 500 and \
    sum(1 for r in [x for x in co["sessions"] if x["date"] == sys.argv[4]][0]["m"] if r) > 500:
     bad.append("cell500: 'All 500' stopped at 500, not every priced member")
+# Dow: only 30 members — must show ALL 30, never a subset, and say so honestly (no Show switch)
+cdow = cell_check("celldow", "dow", sys.argv[3], 500) if "dow" in CO else None
+if cdow:
+    dd = open(f"{t}/celldow.html").read()
+    if 'id="cellShowSeg" hidden' not in dd: bad.append("celldow: the pointless 50/100/500 switch still shows for a 30-member index")
+    if "only 30 members" not in html.unescape(dd): bad.append("celldow: no honest 'only 30 members' note")
+    n30 = re.search(r'id="cell"[^>]*data-nodes="(\d+)"', dd)
+    if not n30 or int(n30[1]) != 30: bad.append(f"celldow: drew {n30 and n30[1]} of the Dow's 30, want all 30")
+# Nasdaq: top 500 by market value out of 3,000+ listings — the switch still works, capped at 500
+cnas = cell_check("cellnasdaq", "nasdaq", sys.argv[3], 500) if "nasdaq" in CO else None
 # the key says what size means right now: company value by default, the move after the switch
 for nm, want in (("cell", "bigger = bigger company"), ("cellmove", "bigger = bigger move")):
     kl = re.search(r'id="cellKeyLong">([^<]*)<', open(f"{t}/{nm}.html").read())
     if not kl or want not in kl[1]: bad.append(f"{nm}: key does not say '{want}' ({kl and kl[1][:80]})")
 okd = open(f"{t}/ok.html").read()
-if len(re.findall(r'class="idx hasdoor"', okd)) != 1: bad.append("the S&P 500 card has no 'Look inside' door (or more than one card does)")
+ndoors_want = int(sys.argv[5])
+ndoors_got = len(re.findall(r'class="idx hasdoor"', okd))
+if ndoors_got != ndoors_want: bad.append(f"{ndoors_got} 'Look inside' doors, want {ndoors_want} (one per companies file on disk)")
 sk = re.search(r'id="cell"[^>]*data-specks="(\d+)"', okd)
 if not sk or int(sk[1]) != 50: bad.append(f"lamp: {sk and sk[1]} specks in the S&P 500 blob, want its 50 biggest companies")
 # ...and really painted: on an up day the S&P 500's wax is green, so warm (red/amber) pixels inside
@@ -180,7 +205,7 @@ if 'class="idx hasdoor"' in ncd or 'class="incell"' in ncd: bad.append("no compa
 if re.search(r'data-specks="[1-9]', ncd): bad.append("no company file, yet specks are drawn (fake liveliness)")
 if wax(f"{t}/nocomp.png") < 400: bad.append("no company file broke the lamp itself")
 if bad: print(f"✘ browser-check {size}: " + "; ".join(bad)); sys.exit(1)
-print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp} · {c1} · {c2}")
+print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp} · {c1} · {c2} · {cdow} · {cnas} · {ndoors_got} doors")
 EOF
 done
 exit $RC

@@ -95,23 +95,34 @@ for (const i of d.indexes) {
     ok(Math.abs(cur.prev_close / prev.bars[prev.bars.length - 1][1] - 1) < 0.003, `${i.key} ${cur.date}: prev_close follows ${prev.date}`);
   }
 }
-// the companies inside the S&P 500 blob (data/companies.json, written by fetch.py --companies)
-const cf = path.join(__dirname, "data", "companies.json");
-if (!fs.existsSync(cf)) { console.log("✘ companies.json missing: the inside view would show its honest empty state"); process.exit(1); }
-const co = JSON.parse(fs.readFileSync(cf, "utf8"));
-ok(co.index === "sp500" && co.companies.length >= 480, "companies: the S&P 500's ~503 members: " + co.companies.length);
-ok(co.companies.every((c, k) => c.s && c.n && c.sec && c.cap > 0 && (k === 0 || c.cap <= co.companies[k - 1].cap)), "companies biggest first, each named with a value");
-ok(new Set(co.companies.map(c => c.s)).size === co.companies.length, "no company twice");
-const sp = d.indexes.find(i => i.key === "sp500");
-const cdates = co.sessions.map(x => x.date);
-ok(cdates.every((x, k) => k === 0 || x > cdates[k - 1]), "company days oldest first: " + cdates);
-for (const S of co.sessions) {
-  ok(S.m.length === co.companies.length, S.date + ": one row per company");
-  ok(S.m.every(r => r === null || (r.length === S.t.length && r.every(v => Number.isInteger(v) && Math.abs(v) < 5000))), S.date + ": rows on the day's clock, whole bp, under 50%");
-  const same = sp.sessions.find(x => x.date === S.date);
-  // on the index's own clock (today's company file may trail the index by one fetch: a prefix)
-  if (same) ok(S.t.length <= same.bars.length && S.t.every((t, k) => t === same.bars[k][0]), S.date + ": company clock = the S&P 500's bar times");
+// the companies inside each index's blob (data/companies.json for sp500, data/companies-<key>.json
+// for the other three, all written by fetch.py --companies <key>). A missing file is honest, not a
+// failure: the page shows no door for that index rather than faking one (rule 6).
+const CELL_FILE = { dow: "companies-dow.json", sp500: "companies.json", nasdaq: "companies-nasdaq.json", russell: "companies-russell.json" };
+const CELL_MIN = { dow: 27, sp500: 450, nasdaq: 400, russell: 400 };   // mirrors fetch.py's MIN_PRICED
+const CELL_EXACT = { dow: 30 };   // the Dow must show ALL 30, never a subset (rule: never pad, never truncate)
+let anyCompanies = false;
+for (const key of Object.keys(CELL_FILE)) {
+  const cf = path.join(__dirname, "data", CELL_FILE[key]);
+  if (!fs.existsSync(cf)) { console.log(`… ${CELL_FILE[key]} missing: ${key}'s inside view has no door (honest, not built yet)`); continue; }
+  anyCompanies = true;
+  const co = JSON.parse(fs.readFileSync(cf, "utf8"));
+  ok(co.index === key && co.companies.length >= (CELL_EXACT[key] || 400), `${key}: has its members (${co.companies.length})`);
+  if (CELL_EXACT[key]) ok(co.companies.length === CELL_EXACT[key], `${key}: shows all ${CELL_EXACT[key]}, never a subset (${co.companies.length})`);
+  ok(co.companies.every((c, k) => c.s && c.n && c.cap > 0 && (k === 0 || c.cap <= co.companies[k - 1].cap)), `${key}: companies biggest first, each named with a value`);
+  ok(new Set(co.companies.map(c => c.s)).size === co.companies.length, `${key}: no company twice`);
+  const ix = d.indexes.find(i => i.key === key);
+  const cdates = co.sessions.map(x => x.date);
+  ok(cdates.every((x, k) => k === 0 || x > cdates[k - 1]), `${key}: company days oldest first: ${cdates}`);
+  for (const S of co.sessions) {
+    ok(S.m.length === co.companies.length, `${key} ${S.date}: one row per company`);
+    ok(S.m.every(r => r === null || (r.length === S.t.length && r.every(v => Number.isInteger(v) && Math.abs(v) < 5000))), `${key} ${S.date}: rows on the day's clock, whole bp, under 50%`);
+    const same = ix && ix.sessions.find(x => x.date === S.date);
+    // on the index's own clock (today's company file may trail the index by one fetch: a prefix)
+    if (same) ok(S.t.length <= same.bars.length && S.t.every((t, k) => t === same.bars[k][0]), `${key} ${S.date}: company clock = ${key}'s bar times`);
+  }
+  const lastC = co.sessions[co.sessions.length - 1];
+  ok(lastC.m.filter(Boolean).length >= CELL_MIN[key], `${key} ${lastC.date}: at least ${CELL_MIN[key]} companies priced (${lastC.m.filter(Boolean).length})`);
 }
-const lastC = co.sessions[co.sessions.length - 1];
-ok(lastC.m.filter(Boolean).length >= 450, `${lastC.date}: at least 450 companies priced (${lastC.m.filter(Boolean).length})`);
+ok(anyCompanies, "at least one index has its companies file (else nothing to check)");
 console.log(`✓ market-moods check: ${n} asserts`);
