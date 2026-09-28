@@ -179,7 +179,7 @@
   <div class="cellcap" aria-live="polite">
     <div class="word" id="cellWord">Inside the S&amp;P 500</div>
     <div class="sub num" id="cellSub"></div>
-    <div class="key"><span class="long">Each blob is one company · colour = its move · higher = up · bigger = bigger company · restless = choppy · white ring = moving against the index</span><span class="short">one blob per company · colour = move · high = up · ring = against the index</span></div>
+    <div class="key"><span class="long" id="cellKeyLong"></span><span class="short" id="cellKeyShort"></span></div>
   </div>
 
   <div class="notice" id="notice"></div>
@@ -697,6 +697,9 @@
   }
 
   function cellUi() {
+    const sizeWord = cellSize === "cap" ? "bigger company" : "bigger move";   // the key follows the size switch
+    $("cellKeyLong").textContent = `Each blob is one company · colour = its move · higher = up · bigger = ${sizeWord} · restless = choppy · white ring = moving against the index · tap one for details`;
+    $("cellKeyShort").textContent = `one blob per company · colour = move · high = up · big = ${cellSize === "cap" ? "value" : "move"} · ring = against · tap for details`;
     document.querySelectorAll("#cellctl [data-top]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.top === cellTop));
     document.querySelectorAll("#cellctl [data-size]").forEach(b => b.setAttribute("aria-pressed", b.dataset.size === cellSize));
     if (!inCell || !data) return;

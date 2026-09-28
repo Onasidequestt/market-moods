@@ -48,6 +48,8 @@ for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8766/#cell&day=$D_LAST&at=12:10" "$T/cell"
   shoot $SIZE "http://127.0.0.1:8766/#cell&top=500&day=$D_DOWN&at=15:00" "$T/cell500"
   shoot $SIZE "http://127.0.0.1:8766/.nocomp-check/#cell&day=$D_LAST&at=12:10" "$T/nocomp"
+  "$B" --headless --user-data-dir="$(mktemp -d)" --use-angle=swiftshader --enable-unsafe-swiftshader --window-size="$SIZE" \
+    --virtual-time-budget=5000 --dump-dom "http://127.0.0.1:8766/#cell&size=move&day=$D_LAST&at=12:10" 2>/dev/null > "$T/cellmove.html"
   python3 - "$T" "$SIZE" "$D_LAST" "$D_DOWN" <<'EOF' || RC=1
 import re, sys, html
 from PIL import Image
@@ -151,6 +153,10 @@ c1 = cell_check("cell", sys.argv[3], 50); c2 = cell_check("cell500", sys.argv[4]
 if c2 and int(re.search(r"of (\d+) companies", open(f"{t}/cell500.html").read())[1]) <= 500 and \
    sum(1 for r in [x for x in co["sessions"] if x["date"] == sys.argv[4]][0]["m"] if r) > 500:
     bad.append("cell500: 'All 500' stopped at 500, not every priced member")
+# the key says what size means right now: company value by default, the move after the switch
+for nm, want in (("cell", "bigger = bigger company"), ("cellmove", "bigger = bigger move")):
+    kl = re.search(r'id="cellKeyLong">([^<]*)<', open(f"{t}/{nm}.html").read())
+    if not kl or want not in kl[1]: bad.append(f"{nm}: key does not say '{want}' ({kl and kl[1][:80]})")
 okd = open(f"{t}/ok.html").read()
 if len(re.findall(r'class="idx hasdoor"', okd)) != 1: bad.append("the S&P 500 card has no 'Look inside' door (or more than one card does)")
 sk = re.search(r'id="cell"[^>]*data-specks="(\d+)"', okd)
