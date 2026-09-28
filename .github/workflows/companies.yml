@@ -1,0 +1,51 @@
+# Refresh the per-index "companies inside the blob" files on their own, slower cron.
+# Split out of fetch.yml (2026-09-28): once Nasdaq's top-500 fetch was measured at ~5.5 min and
+# the S&P 500's at ~2 min, the two together already ate most of a 10-minute slot before Dow, the
+# checks, and the commit/push even ran — a Russell 2000 door (also ~500 names) would have made
+# the fetch.yml job comfortably miss its next scheduled start, since cancel-in-progress is false
+# and runs queue instead of overlapping.
+#
+# ponytail: every 30 minutes is a guess, not a measured ceiling — it just needs to be bigger than
+# the slowest single index's fetch time (~6 min measured for Nasdaq) with headroom for GitHub's
+# best-effort cron slippage (5-20 min late, same caveat as fetch.yml). Ceiling: fine as long as no
+# single index's roster+price fetch creeps past ~15 min. Upgrade path if it does: cache each
+# index's ROSTER (the slow, rarely-changing part — which symbols are members) once a day in its
+# own file, and have this workflow fetch only PRICES for the cached roster every run; that turns
+# the roster's one-time cost (the HTTP calls in ROSTERS[key](), which is most of Nasdaq's ~5.5 min)
+# into a once-daily cost, leaving only per-symbol price calls (caps()/spark()) on the 30-min cycle.
+name: fetch index companies
+on:
+  schedule:
+    - cron: "5,35 13-20 * * 1-5"   # offset from fetch.yml's :00/:10/... slots, still market hours
+    - cron: "25 21 * * 1-5"        # once after the close
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: companies, cancel-in-progress: false }
+jobs:
+  companies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      # each index is a separate, isolated source: if one fails the last good file for THAT index
+      # stays and the others still ship (the page says how far behind it is) — unchanged from
+      # when these lived in fetch.yml.
+      - run: python3 fetch.py --companies sp500 || echo "::warning::sp500 company fetch failed; keeping the last companies.json"
+      - run: python3 fetch.py --companies dow || echo "::warning::dow company fetch failed; keeping the last companies-dow.json"
+      - run: python3 fetch.py --companies nasdaq || echo "::warning::nasdaq company fetch failed; keeping the last companies-nasdaq.json"
+      - run: python3 fetch.py --companies russell || echo "::warning::russell company fetch failed (iShares' anti-bot wall has blocked this fetch every time so far, including a real headless-Chromium attempt on 09-28; no companies-russell.json exists yet)"
+      - run: node check.js
+      - run: |
+          git diff --quiet data/companies.json data/companies-dow.json data/companies-nasdaq.json 2>/dev/null && { echo "no change"; exit 0; }
+          git config user.name "market-moods bot"
+          git config user.email "actions@users.noreply.github.com"
+          # pull first: fetch.yml commits data/market.json on its own, faster cron
+          git pull --rebase --autostash
+          git add data/companies.json data/companies-dow.json data/companies-nasdaq.json
+          [ -f data/companies-russell.json ] && git add data/companies-russell.json   # not built yet (see fetch.py's roster_russell)
+          git commit -m "data: companies $(date -u +%FT%TZ)"
+          git push

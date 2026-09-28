@@ -3,9 +3,11 @@
 # ponytail: GitHub cron is best-effort (runs can start 5-20 min late) and a scheduled workflow
 # pauses after 60 days without repo activity. Ceiling: a prototype's "delayed" promise.
 # Upgrade path: a fetcher on the client's own host (cron + licensed feed), page reads it there.
-# ponytail: data/companies.json (~800 KB, the S&P 500's members over five days) is re-committed on
-# each run, so the repo grows by roughly its compressed delta per run. Ceiling: a few months of a
-# prototype. Upgrade path: the same host fetcher, or squash the data history now and then.
+#
+# The per-index COMPANIES files (data/companies*.json) are fetched by a separate, slower
+# workflow (companies.yml) on its own cron — see that file for why. This workflow only ever
+# touches data/market.json, so it stays fast (~20-30s measured) and never risks missing its
+# 10-minute slot because a companies fetch ran long.
 name: fetch market data
 on:
   schedule:
@@ -25,22 +27,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - run: python3 fetch.py --selfcheck && python3 fetch.py
-      # the companies are a second, slower source per index: if one fails the last good file for
-      # THAT index stays and the others still ship (the page says how far behind it is).
-      # ponytail: nasdaq/russell (~500 symbols each) take minutes (measured ~2-6 min locally) vs
-      # dow/sp500's seconds; all four run in one 10-minute slot today. Ceiling: fine while the run
-      # fits the slot. Upgrade path: if runs start overlapping/timing out, move nasdaq+russell to
-      # their own slower cron (e.g. every 30-60 min) instead of every 10.
-      - run: python3 fetch.py --companies sp500 || echo "::warning::sp500 company fetch failed; keeping the last companies.json"
-      - run: python3 fetch.py --companies dow || echo "::warning::dow company fetch failed; keeping the last companies-dow.json"
-      - run: python3 fetch.py --companies nasdaq || echo "::warning::nasdaq company fetch failed; keeping the last companies-nasdaq.json"
-      - run: python3 fetch.py --companies russell || echo "::warning::russell company fetch failed (iShares' anti-bot page has blocked this fetch every time so far; no companies-russell.json exists yet)"
       - run: node check.js
       - run: |
-          git diff --quiet data/ && { echo "no change"; exit 0; }
+          git diff --quiet data/market.json && { echo "no change"; exit 0; }
           git config user.name "market-moods bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/market.json data/companies.json data/companies-dow.json data/companies-nasdaq.json
-          [ -f data/companies-russell.json ] && git add data/companies-russell.json   # not built yet (see fetch.py's roster_russell)
+          # pull first: the companies workflow commits to the same branch on its own cron
+          git pull --rebase --autostash
+          git add data/market.json
           git commit -m "data: $(date -u +%FT%TZ)"
           git push
