@@ -95,6 +95,12 @@ near(M.volumeLevel([100, 100, 100]), 0.5, "trading exactly at its own recent ave
 near(M.volumeLevel([100, 100, 400]), 1, "double the recent average caps the pulse at its strongest");
 ok(M.volumeLevel([null, 100, 100, 300]) > 0.5, "a null reading is dropped from the average, not counted as zero");
 
+// scrubber: a track fraction -> the nearest whole bar, shared by a real drag and the #scrub= link
+ok(M.scrubPos(0, 79) === 0, "the far left of the track is the first bar");
+ok(M.scrubPos(1, 79) === 78, "the far right of the track is the last bar");
+ok(M.scrubPos(0.5, 11) === 5, "the middle of an 11-bar track lands on bar 5");
+ok(M.scrubPos(-0.4, 10) === 0 && M.scrubPos(1.4, 10) === 9, "a drag past either edge clamps to it, never falls off the track");
+
 // the data file the page reads
 const f = path.join(__dirname, "data", "market.json");
 const d = JSON.parse(fs.readFileSync(f, "utf8"));

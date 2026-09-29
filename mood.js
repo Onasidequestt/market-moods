@@ -119,8 +119,13 @@
     return avg > 0 ? clamp(v[v.length - 1] / avg, 0, 2) / 2 : 0;
   }
 
+  // scrubber: a fraction of the track (0..1) -> the nearest whole bar index. The same function
+  // drives both a real pointer drag and the page's own #scrub= test hook, so what the mouse does
+  // and what a link does are provably the same rule (rule 2: nothing to verify twice, separately).
+  const scrubPos = (frac, nBars) => clamp(Math.round(clamp(frac, 0, 1) * (nBars - 1)), 0, nBars - 1);
+
   const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
                 against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER,
-                fear, volumeLevel };
+                fear, volumeLevel, scrubPos };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Mood = api;
 })(this);

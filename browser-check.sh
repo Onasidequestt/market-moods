@@ -321,4 +321,31 @@ if bad: print("✘ browser-check pulse: " + "; ".join(bad)); sys.exit(1)
 print(f"✓ browser-check pulse: data-pulse={m[1]} ({'volume present' if has_vol else 'no volume: honest still'})")
 EOF
 
+
+# ---- replay scrubber: #scrub=<frac> goes through the SAME Mood.scrubPos() a real pointer drag
+# calls (see index.html) — a headless dump-dom cannot drag, so this exercises the identical
+# function and wiring the drag handler uses, at three fractions including both edges ----
+for FRAC in 0 0.5 1; do
+  shoot 390,844 "http://127.0.0.1:8766/#day=$D_LAST&scrub=$FRAC" "$T/scrub_$FRAC"
+done
+python3 - "$T" "$D_LAST" <<'EOF' || RC=1
+import json, re, sys
+t, date = sys.argv[1], sys.argv[2]
+mk = json.load(open("data/market.json"))
+ix = [i for i in mk["indexes"] if i["key"] == "sp500"][0]
+S = [x for x in ix["sessions"] if x["date"] == date][0]
+nbars = len(S["bars"])
+bad = []
+for frac in ("0", "0.5", "1"):
+    want = min(max(round(float(frac) * (nbars - 1)), 0), nbars - 1)
+    dom = open(f"{t}/scrub_{frac}.html").read()
+    m = re.search(r'id="track"[^>]*aria-valuenow="(\d+)"', dom)
+    pos_m = re.search(r'id="clock"[^>]*>([^<]*)<', dom)
+    want_pct = round(want / (nbars - 1) * 100)
+    if not m: bad.append(f"scrub={frac}: track aria-valuenow not reported"); continue
+    if abs(int(m[1]) - want_pct) > 1: bad.append(f"scrub={frac}: track at {m[1]}%, want ~{want_pct}% (bar {want} of {nbars})")
+if bad: print("✘ browser-check scrub: " + "; ".join(bad)); sys.exit(1)
+print(f"✓ browser-check scrub: #scrub=0/0.5/1 land on the expected bars (of {nbars})")
+EOF
+
 exit $RC

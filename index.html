@@ -97,8 +97,14 @@
   .btn.day[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-color: var(--ink); }
   .timeline { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
   .timeline .clock { font-size: 12.5px; color: var(--ink-2); min-width: 78px; }
-  .track { position: relative; flex: 1; height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; }
-  .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ink-2); border-radius: 3px; }
+  .track { position: relative; flex: 1; height: 18px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+  .track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 3px; transform: translateY(-50%);
+    border-radius: 3px; background: var(--line); }
+  .track i { position: absolute; left: 0; top: 50%; height: 3px; transform: translateY(-50%); width: 0;
+    background: var(--ink-2); border-radius: 3px; pointer-events: none; }
+  .track b { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: var(--ink);
+    left: 0; transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(0, 0, 0, .5); pointer-events: none; }
+  .track:active b, .track.scrubbing b { transform: translate(-50%, -50%) scale(1.25); }
   .timeline .ends { font-size: 11px; color: var(--ink-3); }
   .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .idx { background: var(--glass); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px;
@@ -198,7 +204,8 @@
       <button class="btn" id="playBtn" type="button" aria-label="Pause replay"><svg viewBox="0 0 16 16" aria-hidden="true" id="playIcon"><path d="M4 2h3v12H4zm5 0h3v12H9z"/></svg></button>
       <span class="clock num" id="clock"></span>
       <span class="ends">9:30</span>
-      <div class="track"><i id="progress"></i></div>
+      <div class="track" id="track" role="slider" aria-label="Scrub the replay" tabindex="0"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="progress"></i><b></b></div>
       <span class="ends">4:00</span>
     </div>
     <div class="readouts" id="readouts"></div>
@@ -216,6 +223,7 @@
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
     <dt>Fear</dt><dd>The VIX, the market's own "fear gauge", warms the whole lamp's glow and quickens its bubbling a little on top of each index's own move when it runs high. VIX moves slowly, so this is a subtle, smoothed fever, not a jolt.</dd>
     <dt>Heartbeat</dt><dd>The whole lamp breathes with how much is actually trading: a subtle pulse in size, stronger when recent volume is heavy, gone still when the market is shut.</dd>
+    <dt>Replay</dt><dd>When the market is closed, drag the dot on the line at the bottom to scrub back and forth through that trading day and watch the lamp move.</dd>
     <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. Companies cluster by sector — tech, energy, health care and the rest — each cluster labelled and coloured by its own average move, so you can see which part of the market is sick or healthy. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
@@ -335,8 +343,11 @@
       console.warn("market-moods load:", e.message);
     }
   }
-  // #at=13:05 starts the replay at that Eastern time (a shareable link to a moment)
+  // #at=13:05 starts the replay at that Eastern time (a shareable link to a moment); #scrub=0.75
+  // (browser-check.sh only — see the track wiring below) goes through the SAME Mood.scrubPos() a
+  // real drag uses, not a separate hand-rolled calculation.
   function startPos(d) {
+    if (wantScrub != null) return Mood.scrubPos(+wantScrub, d.indexes[0].bars.length);
     const m = /at=(\d{1,2}):(\d{2})/.exec(location.hash); if (!m) return 0;
     const want = +m[1] * 60 + +m[2], bars = d.indexes[0].bars;
     const i = bars.findIndex(b => { const [h, mm] = fmtET(b[0], { hour: "numeric", minute: "2-digit", hour12: false }).split(":"); return (+h % 24) * 60 + +mm >= want; });
@@ -570,7 +581,10 @@
     } else {
       setStatus("replay", (stale ? "Feed behind · replaying " : "Market closed · replaying ") + day);
       $("clock").textContent = fmtET(barT, { hour: "numeric", minute: "2-digit" }) + " ET";
-      $("progress").style.width = (pos / lastPos() * 100).toFixed(2) + "%";
+      const pct100 = (pos / lastPos() * 100);
+      $("progress").style.width = pct100.toFixed(2) + "%";
+      track.querySelector("b").style.left = pct100.toFixed(2) + "%";
+      track.setAttribute("aria-valuenow", Math.round(pct100));
     }
   }
 
@@ -922,6 +936,37 @@
     $("playBtn").setAttribute("aria-label", paused ? "Play replay" : "Pause replay");
     $("playIcon").innerHTML = paused ? '<path d="M4 2l10 6-10 6z"/>' : '<path d="M4 2h3v12H4zm5 0h3v12H9z"/>';
   };
+  // replay scrubber: drag the track itself to move through the day — the SAME Mood.scrubPos()
+  // rule a #scrub= test link uses (see below), so a drag and a link land on provably the same bar.
+  // Dragging pauses the auto-advance (like hitting pause) rather than fighting the user's thumb;
+  // it stays paused after release, same as clicking pause — "part of the lamp", not a video seeker
+  // that snaps back to play. Rule: the whole lamp keeps rendering from `pos` every frame already,
+  // so scrubbing needs no separate draw path — it just moves the same clock everything else reads.
+  const track = $("track");
+  let wasPaused = false;
+  function scrubTo(clientX) {
+    const r = track.getBoundingClientRect();
+    const frac = (clientX - r.left) / Math.max(1, r.width);
+    pos = Mood.scrubPos(frac, lastPos() + 1);
+    hold = 0; step(0); ui();
+  }
+  track.addEventListener("pointerdown", e => {
+    if (mode !== "replay") return;
+    wasPaused = paused; paused = true; track.classList.add("scrubbing");
+    track.setPointerCapture(e.pointerId); scrubTo(e.clientX);
+  });
+  track.addEventListener("pointermove", e => { if (track.classList.contains("scrubbing")) scrubTo(e.clientX); });
+  const endScrub = () => { track.classList.remove("scrubbing"); };
+  track.addEventListener("pointerup", endScrub); track.addEventListener("pointercancel", endScrub);
+  track.addEventListener("keydown", e => {
+    if (mode !== "replay") return;
+    const step_ = e.shiftKey ? 10 : 1;
+    if (e.key === "ArrowLeft") { pos = Math.max(0, pos - step_); hold = 0; paused = true; step(0); ui(); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { pos = Math.min(lastPos(), pos + step_); hold = 0; paused = true; step(0); ui(); e.preventDefault(); }
+  });
+  // #scrub=0.75 (with a #day=): for browser-check.sh only, since a headless dump-dom cannot drag a
+  // pointer — exercises the exact same Mood.scrubPos() the real drag above calls.
+  const wantScrub = (/(^#|&)scrub=([\d.]+)/.exec(location.hash) || [])[2];
   canvas.addEventListener("click", e => {
     const H = innerHeight;
     const hit = data && lanes.length && data.indexes.find((ix, i) => {
