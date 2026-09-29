@@ -42,10 +42,21 @@ def pairs(res):
     ts, cl = res.get("timestamp") or [], res["indicators"]["quote"][0]["close"]
     return [(t, c) for t, c in zip(ts, cl) if c is not None]
 
+def _volumes(res):
+    """{unix: volume} for the same bars pairs() keeps (a close present) — volume heartbeat reuses
+    the SAME chart response already fetched for prices (rule 4: no new source, no new call)."""
+    ts, cl = res.get("timestamp") or [], res["indicators"]["quote"][0]["close"]
+    vol = res["indicators"]["quote"][0].get("volume") or [None] * len(ts)
+    return {t: v for t, c, v in zip(ts, cl, vol) if c is not None and v is not None}
+
 def shape(key, name, sym, intraday, daily):
-    """Pure: each session's 5-min bars + the official close of the session before it."""
+    """Pure: each session's 5-min bars + the official close of the session before it.
+    Each bar is [unix, close, volume|null] — volume rides along with the same bar it was already
+    fetched with; null (not zero, not carried forward) when Yahoo didn't report one, so a missing
+    reading is never drawn as a real, quiet moment (rule 6)."""
     bars = pairs(intraday)
     if not bars: raise ValueError(f"{sym}: no intraday bars")
+    vols = _volumes(intraday)
     day = lambda t: datetime.fromtimestamp(t, ET).date()
     closes = pairs(daily)
     sessions = []
@@ -53,7 +64,7 @@ def shape(key, name, sym, intraday, daily):
         prior = [c for t, c in closes if day(t) < d]
         if not prior: continue                      # no close before it: cannot say how it moved
         sessions.append({"date": d.isoformat(), "prev_close": round(prior[-1], 2),
-                         "bars": [[t, round(c, 2)] for t, c in bars if day(t) == d]})
+                         "bars": [[t, round(c, 2), vols.get(t)] for t, c in bars if day(t) == d]})
     if not sessions: raise ValueError(f"{sym}: no daily close before {day(bars[-1][0])}")
     last = sessions[-1]
     return {"key": key, "name": name, "symbol": sym, "session_date": last["date"],
@@ -293,13 +304,18 @@ def selfcheck():
     t0 = int(datetime(2026, 9, 25, 9, 30, tzinfo=ET).timestamp())
     d24 = int(datetime(2026, 9, 24, 16, 0, tzinfo=ET).timestamp())
     intr = {"timestamp": [d24, t0, t0 + 300, t0 + 600],
-            "indicators": {"quote": [{"close": [99.0, 101.0, None, 103.0]}]}}
+            "indicators": {"quote": [{"close": [99.0, 101.0, None, 103.0], "volume": [500, 1200, None, None]}]}}
     daily = {"timestamp": [d24 - 86400, d24, t0], "indicators": {"quote": [{"close": [98.0, 100.0, 103.0]}]}}
     s = shape("sp500", "S&P 500", "^GSPC", intr, daily)
     assert s["session_date"] == "2026-09-25", s
     assert s["prev_close"] == 100.0, s          # the 09-24 close, not the 09-25 daily row
-    assert s["bars"] == [[t0, 101.0], [t0 + 600, 103.0]], s   # prior day + null dropped
+    assert s["bars"] == [[t0, 101.0, 1200], [t0 + 600, 103.0, None]], s   # prior day + null dropped; volume rides along
     assert s["last"] == 103.0 and s["last_time"] == t0 + 600
+    # volume heartbeat: no volume field at all in the source -> every bar's volume is null (honest
+    # empty state, never zero — zero would look like real, quiet trading)
+    intr_nv = {"timestamp": [t0], "indicators": {"quote": [{"close": [101.0]}]}}
+    s_nv = shape("sp500", "S&P 500", "^GSPC", intr_nv, daily)
+    assert s_nv["bars"] == [[t0, 101.0, None]], s_nv["bars"]
     # every session carries the close of the day before it (09-24 <- 09-23's 98, 09-25 <- 09-24's 100)
     assert [(x["date"], x["prev_close"]) for x in s["sessions"]] == [("2026-09-24", 98.0), ("2026-09-25", 100.0)], s
     # a session with no daily close before it (09-22 here) is dropped, not guessed
@@ -340,7 +356,7 @@ def selfcheck():
     # the fear gauge (VIX) reuses shape() itself, not a parallel parser — same function, key "vix"
     vs = shape("vix", "VIX", "^VIX", intr, daily)
     assert vs["key"] == "vix" and vs["last"] == 103.0, vs
-    print("✓ fetch selfcheck: 20 asserts")
+    print("✓ fetch selfcheck: 22 asserts")
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv: selfcheck(); sys.exit(0)

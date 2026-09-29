@@ -301,4 +301,24 @@ if bad: print("✘ browser-check fear: " + "; ".join(bad)); sys.exit(1)
 print(f"✓ browser-check fear: data-fear={m[1]} ({'vix present' if 'vix' in mk else 'no vix: honest 0'})")
 EOF
 
+
+# ---- volume heartbeat: a live pulse when the market has recent volume; a market.json whose bars
+# carry no volume (the pre-heartbeat shape, or a genuinely shut/quiet market) must be an honest 1
+# (no fake breathing) ----
+shoot 390,844 "http://127.0.0.1:8766/#at=12:10" "$T/pulse_ok"
+python3 - "$T" <<'EOF' || RC=1
+import json, re, sys
+t = sys.argv[1]
+mk = json.load(open("data/market.json"))
+has_vol = any(b[2] is not None for i in mk["indexes"] for b in i["bars"])
+dom = open(f"{t}/pulse_ok.html").read()
+m = re.search(r'data-pulse="([\d.]+)"', dom)
+bad = []
+if not m: bad.append("no data-pulse reported")
+elif not has_vol and abs(float(m[1]) - 1) > 1e-6: bad.append(f"no volume in market.json, yet pulse={m[1]} (faked breathing)")
+elif float(m[1]) < 0.9 or float(m[1]) > 1.1: bad.append(f"pulse={m[1]} outside the documented subtle +-10% band")
+if bad: print("✘ browser-check pulse: " + "; ".join(bad)); sys.exit(1)
+print(f"✓ browser-check pulse: data-pulse={m[1]} ({'volume present' if has_vol else 'no volume: honest still'})")
+EOF
+
 exit $RC

@@ -215,6 +215,7 @@
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
     <dt>Fear</dt><dd>The VIX, the market's own "fear gauge", warms the whole lamp's glow and quickens its bubbling a little on top of each index's own move when it runs high. VIX moves slowly, so this is a subtle, smoothed fever, not a jolt.</dd>
+    <dt>Heartbeat</dt><dd>The whole lamp breathes with how much is actually trading: a subtle pulse in size, stronger when recent volume is heavy, gone still when the market is shut.</dd>
     <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. Companies cluster by sector — tech, energy, health care and the rest — each cluster labelled and coloured by its own average move, so you can see which part of the market is sick or healthy. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
@@ -255,6 +256,11 @@
   // blobs (idea #2's own stated risk), so a fast smoothing constant would make it feel like noise
   // rather than a mood. Stays 0 (no effect, honest empty state) when data.vix is absent.
   let fearShown = 0;
+  // volume heartbeat: a breathing pulse on the whole lamp's size, tied to how heavy the last few
+  // 5-minute bars traded (summed across all four indexes — the market's own combined volume)
+  // relative to their own recent average. Stays still (0) when the market is shut: no live bars
+  // means no real recent volume to measure, and a shut market IS quiet (rule 6, honest, not faked).
+  let volShown = 0, breathPhase = 0;
 
   // ---------- readouts ----------
   function buildReadouts() {
@@ -483,12 +489,21 @@
     // a mood, not a jittery reaction to one noisy tick (idea #2's own risk, addressed here).
     const fearTarget = data.vix ? Mood.fear(data.vix.last) : 0;
     fearShown += (fearTarget - fearShown) * (1 - Math.exp(-dt * 0.01));
+    // combined volume of the last 6 bars up to `pos`, summed across all four indexes, each
+    // index's own null bars dropped (never zeroed) before Mood.volumeLevel sees them
+    const fl = Math.max(0, Math.floor(pos)), win = data.indexes.map(ix => ix.bars.slice(Math.max(0, fl - 5), fl + 1));
+    const combined = win[0] ? win[0].map((_, k) => win.reduce((sum, b) => sum + (b[k] && b[k][2] != null ? b[k][2] : 0), 0) || null) : [];
+    const volTarget = Mood.volumeLevel(combined);
+    volShown += (volTarget - volShown) * (1 - Math.exp(-dt * 0.3));   // a real heartbeat, faster than the fear gauge
+    breathPhase += dt * 1.3;
   }
 
   function draw() {
     const W = canvas.width, H = canvas.height, aspect = W / H;
     const laneW = aspect / 4;
-    const baseR = Math.min(laneW * 0.34, 0.095);
+    const pulse = 1 + 0.05 * volShown * Math.sin(breathPhase);   // the heartbeat: still (1) when volShown is 0
+    const baseR = Math.min(laneW * 0.34, 0.095) * pulse;
+    document.body.dataset.pulse = pulse.toFixed(4);   // read by browser-check.sh
     const band = travel(baseR * 1.4 * 1.25);   // biggest blob (size 1.4) with its droplets bunched: body edge at (Σr⁴)^¼ ≈ 1.23 R
     let n = 0;
     lanes.forEach((L, i) => {

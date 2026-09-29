@@ -108,7 +108,19 @@
   // the smoothing, since VIX moves far slower than the blobs (idea #2's own stated risk).
   const fear = level => clamp((level - 15) / 20, 0, 1);
 
+  // volume heartbeat: how heavy the last few bars traded relative to their own recent average —
+  // 0 (still) when the market is shut (fewer than 2 real readings) or the average itself is 0,
+  // 1 at double the recent average. Nulls (a bar with no volume reading) are dropped, not zeroed:
+  // a missing reading must never read as a real, quiet moment (rule 6, same law as fetch.py's).
+  function volumeLevel(vols) {
+    const v = vols.filter(x => x != null && x > 0);
+    if (v.length < 2) return 0;
+    const avg = v.reduce((a, b) => a + b, 0) / v.length;
+    return avg > 0 ? clamp(v[v.length - 1] / avg, 0, 2) / 2 : 0;
+  }
+
   const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
-                against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER, fear };
+                against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER,
+                fear, volumeLevel };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Mood = api;
 })(this);

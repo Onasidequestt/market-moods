@@ -87,6 +87,14 @@ near(M.fear(25), 0.5, "VIX 25 is half-way to full fear");
 near(M.fear(5), 0, "fear clamps at the floor, never negative");
 near(M.fear(60), 1, "fear clamps at the ceiling");
 
+// volume heartbeat: 0..1, relative to the bars' own recent average; shut/no-data market is still
+ok(M.volumeLevel([]) === 0, "no volume readings: the lamp stays still (market shut)");
+ok(M.volumeLevel([0, 0, 0]) === 0, "all-zero volume: still, not a fake pulse");
+ok(M.volumeLevel([null, null, 100]) === 0, "one real reading is not enough to say anything");
+near(M.volumeLevel([100, 100, 100]), 0.5, "trading exactly at its own recent average is a normal, half-strength beat");
+near(M.volumeLevel([100, 100, 400]), 1, "double the recent average caps the pulse at its strongest");
+ok(M.volumeLevel([null, 100, 100, 300]) > 0.5, "a null reading is dropped from the average, not counted as zero");
+
 // the data file the page reads
 const f = path.join(__dirname, "data", "market.json");
 const d = JSON.parse(fs.readFileSync(f, "utf8"));
