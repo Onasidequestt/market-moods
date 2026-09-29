@@ -214,7 +214,7 @@
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
-    <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
+    <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. Companies cluster by sector — tech, energy, health care and the rest — each cluster labelled and coloured by its own average move, so you can see which part of the market is sick or healthy. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
   <div class="ramp-l"><span>−1%</span><span>−0.5%</span><span>0</span><span>+0.5%</span><span>+1%</span></div>
@@ -627,14 +627,41 @@
     return { cx: innerWidth / 2, cy: (top + foot) / 2, R };
   }
 
+  // sectors as organs: instead of scattering every company across the whole cell by its own move,
+  // group them by GICS sector into named clusters ("organs"), each with its own anchor point and
+  // its own mood (the sector's average move sets the organ's colour and height, same rules as
+  // everywhere else: colour = move, height = up floats). Rule 1: one shared layout function used
+  // by every doored index (Dow/S&P/Nasdaq), driven only by mood.js's normSector/sectorRank so it
+  // never special-cases one source's raw sector strings.
+  let cellSectors = [];   // exposed for cellDraw's labels + browser-check.sh: [{name, pct, x, y, n}]
+  function sectorLayout(list, pcts, g) {
+    const agg = new Map();   // canonical sector name -> { sum, n }
+    list.forEach((x, n) => {
+      const name = Mood.normSector(x.c.sec || "");
+      const a = agg.get(name) || { sum: 0, n: 0 }; a.sum += pcts[n]; a.n++; agg.set(name, a);
+    });
+    const present = [...agg.keys()].sort((a, b) => Mood.sectorRank(a) - Mood.sectorRank(b));
+    const cols = present.length || 1;
+    const spacing = Math.min(g.R * 1.5 / Math.max(1, cols - 1), g.R * 0.62);
+    const out = new Map();   // sector name -> { pct, x, y, n }
+    present.forEach((name, i) => {
+      const a = agg.get(name), pct = a.sum / a.n;
+      const x = g.cx + (i - (cols - 1) / 2) * (cols > 1 ? spacing : 0);
+      const y = g.cy - (Mood.heightIn(pct) - 0.5) * 2 * g.R * 0.72;
+      out.set(name, { name, pct, n: a.n, x: clampN(x, g.cx - g.R * 0.8, g.cx + g.R * 0.8), y });
+    });
+    return out;
+  }
   function cellStep(dt) {
     const S = cellSession(), g = cellG = cellGeom();
-    if (!S) { cellNodes.clear(); return; }
+    if (!S) { cellNodes.clear(); cellSectors = []; return; }
     const p = cellPos(S), list = cellMembers(S), want = new Set(list.map(x => x.c.s));
     for (const k of [...cellNodes.keys()]) if (!want.has(k)) cellNodes.delete(k);
     const pcts = list.map(x => Mood.movePct(x.m, p));
     const rr = Mood.radii(list.map((x, n) => cellSize === "cap" ? x.c.cap : Mood.size(pcts[n]) ** 2),
                           g.R * 0.95, list.length > 150 ? 0.4 : 0.44);
+    const sectors = sectorLayout(list, pcts, g);
+    cellSectors = [...sectors.values()];
     const k = 1 - Math.exp(-dt * 2.5), fl = Math.floor(p), fresh = [];
     list.forEach((x, n) => {
       let N = cellNodes.get(x.c.s);
@@ -646,9 +673,13 @@
       N.r += (Math.max(1.7, rr[n]) - N.r) * k;
       if (N.chopAt !== curDay + fl) { N.chop = Mood.choppiness(x.m.map(b => 1 + b / 1e4), fl); N.chopAt = curDay + fl; }
       N.sp = Mood.speed(N.chop) * (reduced ? 0.4 : 1); N.ph += dt * N.sp;
-      const ty = g.cy - (Mood.heightIn(N.pct) - 0.5) * 2 * g.R * 0.8;
-      const hc = Math.sqrt(Math.max(0, g.R * g.R - (ty - g.cy) ** 2));
-      N.tx = g.cx + (N.seed - 0.5) * 2 * hc * 0.88; N.ty = ty;
+      // the organ's own anchor, jittered by the company's own seed within a cluster radius that
+      // grows gently with the organ's member count (a lone company barely jitters; a big organ
+      // spreads more) — never wider than the lane between neighbouring organs.
+      const sec = sectors.get(Mood.normSector(x.c.sec || ""));
+      const clusterR = Math.min(g.R * 0.34, g.R * 0.09 * Math.sqrt(sec.n));
+      N.tx = clampN(sec.x + (N.seed - 0.5) * 2 * clusterR, g.cx - g.R * 0.94, g.cx + g.R * 0.94);
+      N.ty = clampN(sec.y + (hashS(x.c.s + "~y") - 0.5) * 2 * clusterR, g.cy - g.R * 0.94, g.cy + g.R * 0.94);
     });
     const nodes = [...cellNodes.values()];
     for (const N of fresh) { N.x = N.tx; N.y = N.ty; }
@@ -716,8 +747,24 @@
       ctx.font = `600 ${Math.min(14, Math.round(N.r * 0.5))}px ui-sans-serif, -apple-system, "Segoe UI", sans-serif`;
       ctx.fillText(N.s, N.dx, N.dy);
     }
+    // sector organ labels: one small tag per present sector, above its own cluster, coloured by
+    // its own average move — kept uncluttered by shrinking with device width and by only naming
+    // the organ (never every member), so 11 sectors never reads as 11 sentences at 390px.
+    const small = innerWidth < 480;
+    ctx.font = `600 ${small ? 9 : 11}px ui-sans-serif, -apple-system, "Segoe UI", sans-serif`;
+    ctx.textBaseline = "alphabetic";
+    for (const sec of cellSectors) {
+      const memberR = [...cellNodes.values()].filter(N => Mood.normSector(N.c.sec || "") === sec.name)
+        .reduce((mx, N) => Math.max(mx, N.r), 0);
+      const ly = sec.y - memberR - 6;
+      ctx.fillStyle = rgba(Mood.colour(sec.pct), 0.92);
+      ctx.fillText(small ? sec.name.replace("Information Technology", "Tech").replace("Consumer Discretionary", "Cons. Disc.")
+        .replace("Consumer Staples", "Cons. Staples").replace("Communication Services", "Comm.").slice(0, 14) : sec.name,
+        sec.x, ly);
+    }
     cv.dataset.cell = `${Math.round(g.cx)},${Math.round(g.cy)},${Math.round(g.R)}`;   // read by browser-check.sh
     cv.dataset.nodes = n;
+    cv.dataset.sectors = cellSectors.length;   // read by browser-check.sh: organ count = distinct sectors shown
   }
 
   // in the lamp: the S&P 500's biggest companies ride inside its blob as specks.

@@ -88,7 +88,22 @@
     return lerp(bp[i], bp[j], clamp(pos - i, 0, 1)) / 100;
   }
 
+  // sectors as organs: sector labels aren't uniform across the page's own sources (Wikipedia's
+  // GICS names vs nasdaq.com's screener labels) — normalised here, in the one place both the
+  // Dow/S&P view and the Nasdaq view read sectors from (rule 1: one shared function).
+  const SECTOR_ALIAS = { "Technology": "Information Technology", "Finance": "Financials",
+    "Basic Materials": "Materials", "Telecommunications": "Communication Services",
+    "Miscellaneous": "Other", "": "Other" };
+  const normSector = s => SECTOR_ALIAS[s] || s;
+  // a fixed left-to-right order so the same organ always lands in the same column inside every
+  // cell, whatever subset of companies (top 50/100/500) is on screen that moment. Unknown/rare
+  // sector names sort last, never dropped.
+  const SECTOR_ORDER = ["Information Technology", "Health Care", "Financials",
+    "Consumer Discretionary", "Communication Services", "Industrials", "Consumer Staples",
+    "Energy", "Utilities", "Real Estate", "Materials"];
+  function sectorRank(name) { const i = SECTOR_ORDER.indexOf(name); return i < 0 ? SECTOR_ORDER.length : i; }
+
   const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
-                against, radii, movePct, heightIn, TYPICAL_5M };
+                against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Mood = api;
 })(this);

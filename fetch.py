@@ -87,6 +87,16 @@ UA = {"User-Agent": "Mozilla/5.0 market-moods"}
 # how many companies each index's inside view can show, and where its roster comes from
 INDEX_CAP = {"dow": 30, "sp500": 500, "nasdaq": 500, "russell": 500}
 
+# sector labels are not uniform across sources (Wikipedia's S&P/Dow tables use GICS sector names;
+# nasdaq.com's screener uses its own shorter labels) — normalised ONCE, here, for every roster
+# (rule 1: one shared function, not a per-index patch), so "sectors as organs" groups the same
+# organ regardless of which source a company came from.
+SECTOR_ALIAS = {"Technology": "Information Technology", "Finance": "Financials",
+                "Basic Materials": "Materials", "Telecommunications": "Communication Services",
+                "Miscellaneous": "Other", "": "Other"}
+def norm_sector(s):
+    return SECTOR_ALIAS.get(s, s)
+
 def _wiki_table(url, anchor):
     req = urllib.request.Request(url, headers={"User-Agent": "market-moods/0.1 (prototype)"})
     page = urllib.request.urlopen(req, timeout=30).read().decode()
@@ -101,7 +111,7 @@ def roster():
     """([(yahoo symbol, name, sector)], precap=None) — the S&P 500 constituents table."""
     out = []
     for c in _wiki_table(ROSTER_URL, 'id="constituents"'):
-        if len(c) >= 3: out.append((c[0].replace(".", "-"), c[1], c[2]))
+        if len(c) >= 3: out.append((c[0].replace(".", "-"), c[1], norm_sector(c[2])))
     if len(out) < 480: raise ValueError(f"sp500 roster has {len(out)} members, expected ~503")
     return out, None
 
@@ -110,7 +120,7 @@ def roster_dow():
     Average companies" constituents table (Company, Exchange, Symbol, Sector, ...)."""
     out = []
     for c in _wiki_table(DOW_URL, 'id="constituents"'):
-        if len(c) >= 4: out.append((c[2].replace(".", "-"), c[0], c[3]))
+        if len(c) >= 4: out.append((c[2].replace(".", "-"), c[0], norm_sector(c[3])))
     if len(out) != 30: raise ValueError(f"dow roster has {len(out)} members, expected 30")
     return out, None
 
@@ -128,7 +138,7 @@ def roster_nasdaq():
         if not sym or not name: continue
         if re.search(r"\b(ETF|Fund|Trust|Warrants?|Units?|Notes?)\b", name, re.I): continue
         if "^" in sym or "." in sym or re.search(r"Test Issue", name, re.I): continue
-        out.append((sym, name, r.get("sector") or ""))
+        out.append((sym, name, norm_sector(r.get("sector") or "")))
         try: cap = float(str(r.get("marketCap") or 0).replace(",", ""))
         except ValueError: cap = 0
         if cap: precap[sym] = cap
@@ -158,7 +168,7 @@ def roster_russell():
         sym = r[i_t].strip()
         if not sym or not re.fullmatch(r"[A-Z.\-]{1,6}", sym): continue
         sym = sym.replace(".", "-")
-        out.append((sym, r[i_n].strip(), r[i_s].strip()))
+        out.append((sym, r[i_n].strip(), norm_sector(r[i_s].strip())))
         if i_v is not None:
             try: v = float(r[i_v].replace(",", "").replace("$", ""))
             except ValueError: v = 0
@@ -313,7 +323,11 @@ def selfcheck():
     assert c3["index"] == "dow", c3["index"]
     # INDEX_CAP/ranking: nasdaq/russell trim to top N by precap BEFORE spending HTTP calls on prices
     assert INDEX_CAP == {"dow": 30, "sp500": 500, "nasdaq": 500, "russell": 500}, INDEX_CAP
-    print("✓ fetch selfcheck: 16 asserts")
+    # sector labels: normalised once for every roster (nasdaq's short names join the GICS ones)
+    assert norm_sector("Technology") == "Information Technology", norm_sector("Technology")
+    assert norm_sector("Finance") == "Financials" and norm_sector("") == "Other", norm_sector("Finance")
+    assert norm_sector("Health Care") == "Health Care", "canonical names pass through unchanged"
+    print("✓ fetch selfcheck: 19 asserts")
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv: selfcheck(); sys.exit(0)

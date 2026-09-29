@@ -71,6 +71,15 @@ near(M.movePct([0, 100], 9), 1, "past the end holds the last bar");
 near(M.heightIn(0), 0.5, "inside: flat mid-cell"); near(M.heightIn(2.5), 1, "inside: +2.5% at the top");
 near(M.heightIn(-1.25), 0.25, "inside: -1.25% a quarter up"); near(M.heightIn(-9), 0, "inside: clamps at the floor");
 
+// sectors as organs: sector names get normalised to one shared vocabulary, and sort into a
+// fixed, stable column order regardless of which source a company's raw label came from
+ok(M.normSector("Technology") === "Information Technology", "nasdaq's 'Technology' joins the same organ as 'Information Technology'");
+ok(M.normSector("Finance") === "Financials" && M.normSector("Basic Materials") === "Materials", "sector aliases normalise");
+ok(M.normSector("Health Care") === "Health Care", "an already-canonical sector passes through unchanged");
+ok(M.sectorRank("Information Technology") === 0, "Information Technology organ is first");
+ok(M.sectorRank("Materials") === M.SECTOR_ORDER.length - 1, "Materials organ is last of the known order");
+ok(M.sectorRank("Something Unheard Of") === M.SECTOR_ORDER.length, "an unknown sector sorts after every known one, never dropped");
+
 // the data file the page reads
 const f = path.join(__dirname, "data", "market.json");
 const d = JSON.parse(fs.readFileSync(f, "utf8"));

@@ -256,4 +256,29 @@ if st != 0: print(f"✘ browser-check help-scroll: dialog opened at scrollTop {s
 print("✓ browser-check help-scroll: help dialog opens at scrollTop 0 on phone")
 EOF
 
+
+# ---- sectors as organs: the cell view groups companies into sector clusters; the drawn organ
+# count must match the number of DISTINCT (normalised) sectors actually present among that day's
+# priced companies — counted independently, here, from the data file, not from the page ----
+shoot 390,844 "http://127.0.0.1:8766/#cell&idx=dow&day=$D_LAST&at=12:10" "$T/org_dow"
+python3 - "$T" <<'EOF' || RC=1
+import json, re, sys
+t = sys.argv[1]
+ALIAS = {"Technology": "Information Technology", "Finance": "Financials",
+         "Basic Materials": "Materials", "Telecommunications": "Communication Services",
+         "Miscellaneous": "Other", "": "Other"}
+co = json.load(open("data/companies-dow.json"))
+mk = json.load(open("data/market.json"))
+ix = [i for i in mk["indexes"] if i["key"] == "dow"][0]
+S = [x for x in co["sessions"] if x["date"] == ix["session_date"]][-1]
+priced_secs = {ALIAS.get(c["sec"], c["sec"]) for c, r in zip(co["companies"], S["m"]) if r}
+dom = open(f"{t}/org_dow.html").read()
+m = re.search(r'id="cell"[^>]*data-sectors="(\d+)"', dom)
+bad = []
+if not m: bad.append("no data-sectors reported")
+elif int(m[1]) != len(priced_secs): bad.append(f"drew {m[1]} sector organs, the Dow's priced companies span {len(priced_secs)} ({sorted(priced_secs)})")
+if bad: print("✘ browser-check sectors: " + "; ".join(bad)); sys.exit(1)
+print(f"✓ browser-check sectors: {m[1]} organs, matches {len(priced_secs)} distinct sectors in the Dow's data")
+EOF
+
 exit $RC
