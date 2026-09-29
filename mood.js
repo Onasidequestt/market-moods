@@ -152,8 +152,65 @@
   // and what a link does are provably the same rule (rule 2: nothing to verify twice, separately).
   const scrubPos = (frac, nBars) => clamp(Math.round(clamp(frac, 0, 1) * (nBars - 1)), 0, nBars - 1);
 
+
+  // ---------- the economy: grouped blobs (energy, metals, farm goods, rates, the slow macro numbers) ----------
+  // A member's move is measured the way its own market measures it, then turned into a "percent-
+  // equivalent" so the SAME colour / height / size rules above apply unchanged:
+  //   pct  = percent change of the level (oil, gold, corn, CPI, sales...)
+  //   bp   = change of a rate in basis points; 10 bp counts as 1% (yields, mortgage rates)
+  //   pt   = change of a rate in percentage points; 0.1 pt counts as 1% (unemployment)
+  //   jobs = change in thousands of jobs; 150k counts as 1% (payrolls)
+  // Colour follows the DIRECTION of the number, not whether it is good news (rising unemployment is
+  // green-up here, like rising oil); the page's help says so.
+  const MINUS = "\u2212";
+  const signed = (v, digits, unit) => (v > 0 ? "+" : v < 0 ? MINUS : "") + Math.abs(v).toFixed(digits) + unit;
+  function econMove(kind, prev, last) {
+    if (!(isFinite(prev) && isFinite(last))) return null;
+    if (kind === "pct") { if (!(prev > 0)) return null; const d = (last / prev - 1) * 100; return { raw: d, pct: d, text: signed(d, 2, "%") }; }
+    if (kind === "bp") { const d = (last - prev) * 100; return { raw: d, pct: d / 10, text: signed(d, 0, " bp") }; }
+    if (kind === "pt") { const d = last - prev; return { raw: d, pct: d * 10, text: signed(d, 1, " pt") }; }
+    if (kind === "jobs") { const d = last - prev; return { raw: d, pct: d / 150, text: signed(d, 0, "k jobs") }; }
+    return null;
+  }
+  // slow = a weekly or monthly release: no last hour to be choppy in, and it never moves between releases
+  const econSlow = m => m.freq === "weekly" || m.freq === "monthly";
+  // the last hour's choppiness of a market-traded member, in the same units as its move (so a yield
+  // and an oil future are judged by the same rule): the spread of bar-to-bar moves of its
+  // percent-equivalent path over the last ~hour of prints. null when fewer than 4 prints fall in that
+  // hour (a thin market, a closed one, a monthly number): "no reading", never "steady".
+  function econChop(m) {
+    if (!m.bars || m.bars.length < 4) return null;
+    const end = m.bars[m.bars.length - 1][0], hour = m.bars.filter(b => b[0] >= end - 3900);
+    if (hour.length < 4) return null;
+    const path = hour.map(b => { const e = econMove(m.kind, m.prev, b[1]); return e ? 100 + e.pct : NaN; });
+    return path.some(v => !isFinite(v)) ? null : choppiness(path, path.length - 1, path.length);
+  }
+  // a group's move = the plain average of its members' percent-equivalents; a group with market-
+  // traded members averages only those (a monthly reading from weeks ago is not today's move);
+  // a group made only of slow numbers (the economy blob) averages them all, each at its own date.
+  function econGroupPct(moves) {
+    const ok = moves.filter(x => x && x.move);
+    const fast = ok.filter(x => !econSlow(x.m)), use = fast.length ? fast : ok;
+    return use.length ? use.reduce((a, x) => a + x.move.pct, 0) / use.length : null;
+  }
+  // where a reading stands in time, in words the page prints as-is. Never says "live" for a number
+  // that is not: a market-traded member is "delayed" only while its last print is under 45 minutes old.
+  function econAsOf(m, nowMs) {
+    const tz = { timeZone: "America/New_York" }, d = new Date(m.asof + "T12:00:00Z");
+    const day = (o) => d.toLocaleDateString("en-US", Object.assign({ timeZone: "UTC" }, o));
+    if (m.freq === "monthly") return { slow: true, live: false, label: "monthly \u00b7 " + day({ month: "short", year: "numeric" }) };
+    if (m.freq === "weekly") return { slow: true, live: false, label: "weekly \u00b7 " + day({ month: "short", day: "numeric" }) };
+    if (m.freq === "daily") return { slow: false, live: false, label: "daily close \u00b7 " + day({ month: "short", day: "numeric" }) };
+    const age = (nowMs / 1000 - m.last_time) / 60, t = new Date(m.last_time * 1000);
+    const clock = t.toLocaleTimeString("en-US", Object.assign({ hour: "numeric", minute: "2-digit" }, tz)) + " ET";
+    if (age <= 45) return { slow: false, live: true, label: "delayed \u00b7 " + clock };
+    const dow = t.toLocaleDateString("en-US", Object.assign({ weekday: "short" }, tz));
+    return { slow: false, live: false, label: "closed \u00b7 as of " + dow + " " + clock };
+  }
+
   const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
                 against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER,
-                fear, fearWord, volumeLevel, pulseAmp, volumeWord, avgSeries, sectorHue, sectorShort, scrubPos };
+                fear, fearWord, volumeLevel, pulseAmp, volumeWord, avgSeries, sectorHue, sectorShort, scrubPos,
+                econMove, econChop, econSlow, econGroupPct, econAsOf };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Mood = api;
 })(this);

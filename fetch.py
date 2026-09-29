@@ -24,7 +24,7 @@ company's move from its previous official close, in basis points (0.01%), on tha
 usage: fetch.py [--out data/market.json] | fetch.py --companies | fetch.py --selfcheck
 """
 import html, http.cookiejar, json, pathlib, re, sys, time, urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 INDEXES = [("dow", "Dow Jones", "^DJI"), ("sp500", "S&P 500", "^GSPC"),
@@ -299,6 +299,129 @@ def build_companies(market, index="sp500"):
     data.update(generated_at=int(time.time()), source=SOURCE_NOTE[index])
     return data
 
+# ---------- economy: grouped blobs for commodities, rates and the slow macro numbers ----------
+# One blob per group, its members inside (same shape as an index and its companies). Two sources,
+# both keyless: Yahoo Finance futures/yields (the same chart endpoint as the indexes, delayed) and
+# FRED's public CSV download (the series' own release rhythm: daily / weekly / monthly). A member's
+# raw prev/last are stored; the page turns them into a move with mood.js's econMove (one rule).
+# ponytail: FRED's CSV is the free keyless door, Yahoo's futures are unofficial and delayed ~10 min.
+# Ceiling: fine for a prototype; monthly numbers can only be as fresh as their release. Upgrade path:
+# FRED's keyed API (vintages, release calendar) and a licensed commodities feed on the client's host.
+FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={id}&cosd={since}"   # cosd: the whole history is slow (5 s); 3 years is instant
+# member: (key, name, source, symbol, kind, unit, freq). kind = how a move is measured (mood.js econMove):
+# pct = percent change of the level, bp = change of a rate in basis points, pt = change in points
+# of a rate (unemployment), jobs = change in thousands of jobs.
+ECON = [
+    ("energy", "Energy", "Energy", [
+        ("brent", "Brent crude", "y", "BZ=F", "pct", "$ / barrel", "5min"),
+        ("wti", "WTI crude", "y", "CL=F", "pct", "$ / barrel", "5min"),
+        ("natgas", "Natural gas", "y", "NG=F", "pct", "$ / MMBtu", "5min"),
+        ("gasoline", "Gasoline", "y", "RB=F", "pct", "$ / gallon", "5min"),
+        ("heatoil", "Heating oil", "y", "HO=F", "pct", "$ / gallon", "5min")]),
+    ("metals", "Metals", "Metals", [
+        ("gold", "Gold", "y", "GC=F", "pct", "$ / oz", "5min"),
+        ("silver", "Silver", "y", "SI=F", "pct", "$ / oz", "5min"),
+        ("copper", "Copper", "y", "HG=F", "pct", "$ / lb", "5min"),
+        ("platinum", "Platinum", "y", "PL=F", "pct", "$ / oz", "5min"),
+        ("aluminium", "Aluminium", "y", "ALI=F", "pct", "$ / tonne", "5min"),
+        ("steel", "Hot-rolled steel", "y", "HRC=F", "pct", "$ / short ton", "5min")]),
+    ("farm", "Farm goods", "Farm", [
+        ("corn", "Corn", "y", "ZC=F", "pct", "cents / bushel", "5min"),
+        ("soy", "Soybeans", "y", "ZS=F", "pct", "cents / bushel", "5min"),
+        ("wheat", "Wheat", "y", "ZW=F", "pct", "cents / bushel", "5min"),
+        ("cotton", "Cotton", "y", "CT=F", "pct", "cents / lb", "5min"),
+        ("coffee", "Coffee", "y", "KC=F", "pct", "cents / lb", "5min"),
+        ("sugar", "Sugar", "y", "SB=F", "pct", "cents / lb", "5min")]),
+    ("rates", "Treasury rates", "Rates", [
+        ("t3m", "3-month bill", "y", "^IRX", "bp", "% yield", "5min"),
+        ("t5y", "5-year note", "y", "^FVX", "bp", "% yield", "5min"),
+        ("t10y", "10-year note", "y", "^TNX", "bp", "% yield", "5min"),
+        ("t30y", "30-year bond", "y", "^TYX", "bp", "% yield", "5min")]),
+    ("macro", "The economy", "Economy", [
+        ("mortgage", "30-year mortgage rate", "f", "MORTGAGE30US", "bp", "% rate", "weekly"),
+        ("cpi", "Consumer prices (CPI)", "f", "CPIAUCSL", "pct", "index", "monthly"),
+        ("unemp", "Unemployment rate", "f", "UNRATE", "pt", "% of workers", "monthly"),
+        ("payrolls", "Jobs on payrolls", "f", "PAYEMS", "jobs", "thousand jobs", "monthly"),
+        ("claims", "Jobless claims", "f", "ICSA", "pct", "claims / week", "weekly"),
+        ("sentiment", "Consumer sentiment", "f", "UMCSENT", "pct", "index", "monthly"),
+        ("retail", "Retail sales", "f", "RSAFS", "pct", "$ million / month", "monthly"),
+        ("spending", "Consumer spending (PCE)", "f", "PCE", "pct", "$ billion / year", "monthly")]),
+]
+# things Clark asked for that no free keyless source carries: listed on the page, never faked
+ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemployment", "payrolls": "Payrolls", "claims": "Claims",
+              "sentiment": "Sentiment", "retail": "Retail", "spending": "Spending", "t3m": "3-month", "t5y": "5-year",
+              "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
+              "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI"}     # a blob's label; the full name rides in the tooltip
+ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)")]
+
+def parse_fred(text):
+    """[(date 'YYYY-MM-DD', value)] from a fredgraph.csv; FRED's '.' (no reading) rows are dropped."""
+    rows = []
+    for ln in text.strip().splitlines()[1:]:
+        d, _, v = ln.partition(",")
+        try: rows.append((d.strip(), float(v)))
+        except ValueError: pass
+    return rows
+
+def econ_yahoo(spec, daily, intraday):
+    """Pure. A market-traded member: newest price vs the close before it. The basis is the DAILY
+    series (last bar vs the one before), not a split by ET calendar day: futures trade nearly around
+    the clock, so 'today' has no clean edge. Falls back to the last two daily closes when there are
+    no intraday bars (thin markets), and says so in `freq`."""
+    key, name, _, sym, kind, unit, _f = spec
+    d = pairs(daily)
+    if len(d) < 2: raise ValueError(f"{sym}: fewer than two daily closes")
+    i = pairs(intraday) if intraday else []
+    live = bool(i) and i[-1][0] >= d[-1][0]
+    lt, last = i[-1] if live else d[-1]
+    return {"key": key, "name": name, "sym": sym, "kind": kind, "unit": unit, "freq": "5min" if live else "daily",
+            "src": "Yahoo Finance", "prev": round(d[-2][1], 4), "last": round(last, 4), "last_time": lt,
+            "asof": datetime.fromtimestamp(lt, ET).date().isoformat(),
+            "bars": [[t, round(c, 4)] for t, c in i[-24:]] if live else []}
+
+def econ_fred(spec, rows):
+    """Pure. A slow member: its latest reading vs the one before, dated by the reading's own date."""
+    key, name, _, sid, kind, unit, freq = spec
+    if len(rows) < 2: raise ValueError(f"{sid}: fewer than two readings")
+    (pd_, prev), (ld, last) = rows[-2], rows[-1]
+    m = {"key": key, "name": name, "sym": sid, "kind": kind, "unit": unit, "freq": freq,
+         "src": f"FRED ({sid})", "prev": prev, "last": last, "asof": ld, "prev_asof": pd_}
+    if freq == "monthly" and kind == "pct" and len(rows) > 12:
+        m["yoy"] = round((last / rows[-13][1] - 1) * 100, 2)      # against the same month a year before
+    return m
+
+def get_fred(sid):
+    since = (datetime.now(timezone.utc) - timedelta(days=3 * 365)).date().isoformat()
+    def call():
+        req = urllib.request.Request(FRED.format(id=sid, since=since))   # no custom User-Agent: FRED drops browser-like and made-up ones, and answers urllib's own
+        with urllib.request.urlopen(req, timeout=25) as r:
+            return parse_fred(r.read().decode())
+    return _retry(call)
+
+def build_economy(prev=None):
+    old = {m["key"]: m for g in (prev or {}).get("groups", []) for m in g["members"]}   # last good file, for a series that fails right now
+    groups, missing = [], [{"group": g, "name": n, "why": w} for g, n, w in ECON_MISSING]
+    for gkey, gname, gshort, specs in ECON:
+        mem = []
+        for spec in specs:
+            try:
+                if spec[2] == "y":
+                    try: intr = get(spec[3], "5m", "5d")
+                    except Exception: intr = None
+                    mem.append(econ_yahoo(spec, get(spec[3], "1d", "1mo"), intr)); time.sleep(0.3)
+                else:
+                    mem.append(econ_fred(spec, get_fred(spec[3])))
+            except Exception as e:      # one dead series never blocks the rest, and is never faked
+                print(f"economy {spec[1]} failed: {e}", file=sys.stderr)
+                if spec[0] in old:      # keep its last real reading: it still carries its own as-of date, so the page
+                    mem.append(dict(old[spec[0]], carried=True))   # says "closed / monthly Aug" and never passes it off as fresh
+                else: missing.append({"group": gkey, "name": spec[1], "why": f"fetch failed: {e}"})
+        groups.append({"key": gkey, "name": gname, "short": gshort, "members": mem})
+    for g in groups:
+        for m in g["members"]: m["short"] = ECON_SHORT.get(m["key"], m["name"])
+    return {"generated_at": int(time.time()), "source": "Yahoo Finance (delayed futures and yields) and FRED (each series at its own release rhythm)",
+            "groups": groups, "missing": missing}
+
 def selfcheck():
     # two ET days: 09-24 (daily close 100) then 09-25 session 101 -> 103, one null bar
     t0 = int(datetime(2026, 9, 25, 9, 30, tzinfo=ET).timestamp())
@@ -356,10 +479,49 @@ def selfcheck():
     # the fear gauge (VIX) reuses shape() itself, not a parallel parser — same function, key "vix"
     vs = shape("vix", "VIX", "^VIX", intr, daily)
     assert vs["key"] == "vix" and vs["last"] == 103.0, vs
-    print("✓ fetch selfcheck: 22 asserts")
+    # economy: parse_fred drops '.' rows; a member is last-vs-the-close-before, dated by its own reading
+    rows = parse_fred("observation_date,X\n2026-06-01,10\n2026-07-01,.\n2026-08-01,12.5\n")
+    assert rows == [("2026-06-01", 10.0), ("2026-08-01", 12.5)], rows
+    f = econ_fred(("x", "X", "f", "X", "pct", "u", "monthly"), rows)
+    assert (f["prev"], f["last"], f["asof"], f["prev_asof"]) == (10.0, 12.5, "2026-08-01", "2026-06-01"), f
+    yr = [(f"2025-{m:02d}-01", 100.0 + m) for m in range(1, 13)] + [("2026-01-01", 120.0), ("2026-02-01", 121.0)]
+    assert econ_fred(("x", "X", "f", "X", "pct", "u", "monthly"), yr)["yoy"] == round((121 / 102 - 1) * 100, 2)   # Feb 26 vs Feb 25
+    daily_e = {"timestamp": [d24, t0], "indicators": {"quote": [{"close": [100.0, 103.0]}]}}
+    intr_e = {"timestamp": [t0 + 60, t0 + 360], "indicators": {"quote": [{"close": [104.0, 105.0]}]}}
+    y = econ_yahoo(("g", "G", "y", "G=F", "pct", "u", "5min"), daily_e, intr_e)
+    assert (y["prev"], y["last"], y["freq"], y["last_time"]) == (100.0, 105.0, "5min", t0 + 360), y   # newest intraday vs the close before today's bar
+    y2 = econ_yahoo(("g", "G", "y", "G=F", "pct", "u", "5min"), daily_e, None)
+    assert (y2["prev"], y2["last"], y2["freq"]) == (100.0, 103.0, "daily") and y2["bars"] == [], y2   # thin market: daily only, said so
+    try: econ_yahoo(("g", "G", "y", "G=F", "pct", "u", "5min"), {"timestamp": [t0], "indicators": {"quote": [{"close": [1.0]}]}}, None); assert False
+    except ValueError: pass                                                                       # one close is not a move
+    try: econ_fred(("x", "X", "f", "X", "pct", "u", "monthly"), [("2026-08-01", 1.0)]); assert False
+    except ValueError: pass                                                                       # nor is one reading
+    # a source that is down: the series keeps its last REAL reading (marked carried, its own date intact);
+    # one with no earlier reading is listed as missing with the reason; nothing is invented either way
+    g = globals(); real = (g["get"], g["get_fred"])
+    def down(*a, **k): raise OSError("down")
+    g["get"], g["get_fred"] = down, down
+    try:
+        prev_e = {"groups": [{"members": [{"key": "brent", "name": "Brent crude", "last": 98.6, "asof": "2026-09-28", "freq": "5min"}]}]}
+        out = build_economy(prev_e)
+    finally:
+        g["get"], g["get_fred"] = real
+    energy = out["groups"][0]["members"]
+    assert [m["key"] for m in energy] == ["brent"] and energy[0]["carried"] and energy[0]["last"] == 98.6, energy
+    assert any(x["name"] == "WTI crude" and "down" in x["why"] for x in out["missing"]) and not any(x["name"] == "Brent crude" for x in out["missing"]), out["missing"]
+    print("✓ fetch selfcheck: 34 asserts")
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv: selfcheck(); sys.exit(0)
+    if "--economy" in sys.argv:
+        here = pathlib.Path(__file__).parent / "data"
+        try: prev = json.loads((here / "economy.json").read_text())
+        except Exception: prev = None
+        data = build_economy(prev)
+        (here / "economy.json").write_text(json.dumps(data, separators=(",", ":")) + "\n")
+        n = sum(len(g["members"]) for g in data["groups"])
+        print(f'economy: {n} series live in {len(data["groups"])} groups, {len(data["missing"])} not live -> data/economy.json')
+        sys.exit(0)
     if "--companies" in sys.argv:
         here = pathlib.Path(__file__).parent / "data"
         i = sys.argv.index("--companies")

@@ -1,0 +1,36 @@
+# Refresh data/economy.json (commodities, Treasury rates, macro numbers) on its own cron, so it never
+# queues behind the index fetch or the companies fetch. Prices come from Yahoo (futures trade almost
+# around the clock, Sunday evening to Friday evening), the slow numbers from FRED's public CSV; a
+# series that fails keeps its last real reading with its own date (see build_economy), never a guess.
+# ponytail: every 15 minutes, Sunday to Friday, commits only when something changed (~16 KB a commit).
+# Ceiling: GitHub cron is best-effort (5-20 min late) and FRED's CSV door could start blocking
+# datacenter IPs (it already drops browser-like User-Agents). Upgrade path: FRED's keyed API, and a
+# fetcher on the client's own host.
+name: fetch economy data
+on:
+  schedule:
+    - cron: "*/15 * * * 0-5"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: economy, cancel-in-progress: false }
+jobs:
+  economy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: python3 fetch.py --selfcheck && python3 fetch.py --economy
+      - run: node check.js --fresh
+      - run: |
+          git diff --quiet data/economy.json && { echo "no change"; exit 0; }
+          git config user.name "market-moods bot"
+          git config user.email "actions@users.noreply.github.com"
+          # pull first: the index and companies workflows commit to the same branch on their own crons
+          git pull --rebase --autostash
+          git add data/economy.json
+          git commit -m "data: economy $(date -u +%FT%TZ)"
+          git push

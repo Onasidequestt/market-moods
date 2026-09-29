@@ -189,4 +189,85 @@ ok(anyCompanies, "at least one index has its companies file (else nothing to che
     else ok(claim.includes(NAME[key]), `help names ${key} as having companies inside`);
   }
 }
+
+const FRESH = process.argv.includes("--fresh");   // economy.yml only: also fail on a stale economy file
+// ---------- the economy blobs (economy.html, data/economy.json, mood.js econ*) ----------
+// rules: a move is measured the way its market measures it, then turned into a percent-equivalent
+near(M.econMove("pct", 100, 98.5).pct, -1.5, "econ pct: percent change of the level");
+near(M.econMove("bp", 5.00, 5.06).raw, 6, "econ bp: a rate's change in basis points");
+near(M.econMove("bp", 5.00, 5.10).pct, 1, "econ bp: 10 bp counts as 1%");
+near(M.econMove("pt", 4.1, 4.2).pct, 1, "econ pt: 0.1 point counts as 1%");
+near(M.econMove("jobs", 100000, 100150).pct, 1, "econ jobs: 150k jobs counts as 1%");
+ok(M.econMove("pct", 0, 5) === null && M.econMove("bp", NaN, 5) === null && M.econMove("nope", 1, 2) === null, "econ: no move rather than a made-up one");
+ok(M.econMove("bp", 5, 5.06).text === "+6 bp" && M.econMove("pct", 100, 98.5).text === "−1.50%" && M.econMove("jobs", 1, 163).text === "+162k jobs", "econ: the words say the unit");
+ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econSlow({ freq: "5min" }) && !M.econSlow({ freq: "daily" }), "econ: weekly and monthly are slow");
+{ // a group of market prices averages only the prices; slow numbers only enter a group made of nothing else
+  const mv = (freq, pct) => ({ m: { freq }, move: { pct } });
+  near(M.econGroupPct([mv("5min", 1), mv("5min", 3), mv("monthly", -9)]), 2, "econ group: the old monthly number is not today's move");
+  near(M.econGroupPct([mv("monthly", 1), mv("weekly", 3)]), 2, "econ group: an all-slow group averages its slow numbers");
+  ok(M.econGroupPct([]) === null && M.econGroupPct([{ m: { freq: "5min" }, move: null }]) === null, "econ group: no members, no move");
+}
+{ // honesty of time: "delayed" only for a fresh print of a market, never for a slow number
+  const now = Date.parse("2026-09-28T20:00:00Z"), t = now / 1000;
+  const fresh = M.econAsOf({ freq: "5min", last_time: t - 600, asof: "2026-09-28" }, now);
+  ok(fresh.live && /^delayed/.test(fresh.label), "econ time: a print 10 minutes old is delayed, not closed");
+  const old = M.econAsOf({ freq: "5min", last_time: t - 3 * 3600, asof: "2026-09-28" }, now);
+  ok(!old.live && /^closed · as of /.test(old.label), "econ time: a 3-hour-old print says closed and when");
+  const mo = M.econAsOf({ freq: "monthly", asof: "2026-08-01", last_time: t }, now);
+  ok(!mo.live && mo.slow && mo.label === "monthly · Aug 2026", "econ time: a monthly number shows its month, even with a fresh last_time");
+  ok(M.econAsOf({ freq: "weekly", asof: "2026-09-24" }, now).label === "weekly · Sep 24", "econ time: a weekly number shows its date");
+  ok(!M.econAsOf({ freq: "daily", asof: "2026-09-28", last_time: t }, now).live, "econ time: a daily close is never live");
+}
+{ // motion: only a real last hour is choppy; a thin or shut market is null, not steady
+  ok(M.econChop({ kind: "pct", prev: 100, bars: [[1000, 100], [1300, 101]] }) === null, "econ chop: two prints is not a last hour");
+  const steady = { kind: "pct", prev: 100, bars: [0, 1, 2, 3, 4, 5].map(k => [1000 + k * 300, 100 + k * 0.01]) };
+  const wild = { kind: "pct", prev: 100, bars: [0, 1, 2, 3, 4, 5].map(k => [1000 + k * 300, 100 + (k % 2 ? 1 : -1)]) };
+  ok(M.econChop(wild) > M.econChop(steady), "econ chop: swinging prints are choppier than a drift");
+  ok(M.econChop({ kind: "pct", prev: 100, bars: [[0, 100], [300, 101], [600, 100], [900, 101], [20000, 100]] }) === null, "econ chop: prints from hours ago are not the last hour");
+}
+// data: real numbers or an honest missing list
+{
+  const ef = path.join(__dirname, "data", "economy.json");
+  if (!fs.existsSync(ef)) console.log("… data/economy.json missing: the economy page shows its honest 'couldn't load' notice");
+  else {
+    const e = JSON.parse(fs.readFileSync(ef, "utf8")), today = Date.now() / 1000, day = 86400;
+    ok(e.groups.map(g => g.key).join() === "energy,metals,farm,rates,macro", "economy: the five groups, in order: " + e.groups.map(g => g.key));
+    const seen = new Set(), all = [];
+    for (const g of e.groups) {
+      ok(g.members.length >= 3, `${g.key}: at least 3 members live (${g.members.length})`);
+      for (const m of g.members) {
+        ok(!seen.has(m.key), `${m.key}: not in two groups`); seen.add(m.key); all.push(m);
+        ok(["pct", "bp", "pt", "jobs"].includes(m.kind) && ["5min", "daily", "weekly", "monthly"].includes(m.freq), `${m.key}: known kind and rhythm`);
+        ok(Number.isFinite(m.prev) && Number.isFinite(m.last) && m.name && m.unit && m.src && m.short, `${m.key}: real numbers, named, with unit and source`);
+        const mv = M.econMove(m.kind, m.prev, m.last);
+        ok(mv && Math.abs(mv.pct) < 30, `${m.key}: a move exists and is under 30% (${mv && mv.text}): a bigger one is a parse bug, not news`);
+        ok(/^\d{4}-\d{2}-\d{2}$/.test(m.asof), `${m.key}: dated`);
+        const age = (today - Date.parse(m.asof + "T12:00:00Z") / 1000) / day;
+        const limit = { "5min": 10, daily: 10, weekly: 21, monthly: 100 }[m.freq];
+        // staleness is only a failure where the economy file is what is being refreshed (economy.yml passes
+        // --fresh); in the index and companies workflows an old economy file must not block stock data
+        if (FRESH) ok(age >= -1 && age <= limit, `${m.key}: ${m.freq} number dated ${m.asof} is ${age.toFixed(0)} days old, limit ${limit}`);
+        else { ok(age >= -1, `${m.key}: not dated in the future`); if (age > limit) console.log(`\u2026 ${m.key} is ${age.toFixed(0)} days old (limit ${limit}); economy.yml would fail on this`); }
+        if (M.econSlow(m)) ok(m.prev_asof && m.prev_asof < m.asof, `${m.key}: a slow number names the reading before it`);
+        else ok(m.last_time > today - 10 * day && m.last_time < today + 3600, `${m.key}: last print time is real`);
+        if (m.freq === "5min") ok(m.bars.length >= 1 && m.bars[m.bars.length - 1][0] === m.last_time && m.bars[m.bars.length - 1][1] === m.last, `${m.key}: the newest bar IS the last price`);
+      }
+    }
+    // everything Clark named is either live or listed as missing WITH a reason: nothing silently dropped
+    const asked = { brent: "Brent", wti: "WTI", natgas: "gas", gold: "Gold", silver: "Silver", copper: "Copper", steel: "steel", cobalt: "Cobalt",
+      corn: "Corn", soy: "Soybeans", cotton: "Cotton", coffee: "Coffee", wheat: "Wheat", t10y: "10-year", mortgage: "mortgage", sentiment: "sentiment",
+      payrolls: "Jobs", spending: "spending", cpi: "Consumer prices", unemp: "Unemployment", retail: "Retail" };
+    for (const [key, word] of Object.entries(asked)) {
+      const live = seen.has(key), miss = e.missing.find(x => x.name.toLowerCase().includes(word.toLowerCase()));
+      ok(live || (miss && miss.why.length > 10), `asked-for ${key}: live, or missing with a reason`);
+      ok(!(live && miss), `${key}: not both live and missing`);
+    }
+    ok(e.missing.every(x => x.group && x.name && x.why), "economy: every missing series says which group, what, and why");
+    ok(all.length >= 20, `economy: ${all.length} series live`);
+  }
+  // the page reads only this file and invents no numbers
+  const page = fs.readFileSync(path.join(__dirname, "economy.html"), "utf8");
+  ok(page.includes('DATA_URL = "data/economy.json"') && !/Math\.random/.test(page), "economy.html: reads data/economy.json only, no random numbers");
+  ok(/<dt>Dates<\/dt>/.test(page) && /never called live/.test(page), "economy.html: help says slow numbers carry their own date");
+}
 console.log(`✓ market-moods check: ${n} asserts`);
