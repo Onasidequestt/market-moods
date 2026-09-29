@@ -27,11 +27,23 @@ sp=[i for i in m['indexes'] if i['key']=='sp500'][0]; ds=[x['date'] for x in c['
 mv={x['date']:x['bars'][-1][1]/x['prev_close'] for x in sp['sessions'] if x['date'] in ds}
 print(ds[-1], min(mv, key=mv.get))")
 EOF2
+# a shut, quiet market: the same data with every volume reading and the VIX removed — the lamp must
+# be exactly still and show no fear (honest zero), companies kept so the cell view can be checked
+mkdir -p "$T/quiet/data"; cp index.html mood.js "$T/quiet/"; cp data/companies*.json "$T/quiet/data/"
+python3 - "$T/quiet/data" <<'EOFQ'
+import json, sys
+m = json.load(open("data/market.json")); m.pop("vix", None)
+def strip(bars): return [[b[0], b[1], None] for b in bars]
+for i in m["indexes"]:
+    i["bars"] = strip(i["bars"])
+    for x in i.get("sessions", []): x["bars"] = strip(x["bars"])
+json.dump(m, open(sys.argv[1] + "/market.json", "w"))
+EOFQ
 python3 -m http.server 8766 --bind 127.0.0.1 >/dev/null 2>&1 & SRV=$!
 trap 'kill $SRV 2>/dev/null; rm -rf "$T"' EXIT
 sleep 1
-ln -s "$T/nodata" ./.nodata-check 2>/dev/null; ln -s "$T/nofs" ./.nofs-check 2>/dev/null; ln -s "$T/nocomp" ./.nocomp-check 2>/dev/null
-trap 'kill $SRV 2>/dev/null; rm -rf "$T"; rm -f ./.nodata-check ./.nofs-check ./.nocomp-check' EXIT
+ln -s "$T/nodata" ./.nodata-check 2>/dev/null; ln -s "$T/nofs" ./.nofs-check 2>/dev/null; ln -s "$T/nocomp" ./.nocomp-check 2>/dev/null; ln -s "$T/quiet" ./.quiet-check 2>/dev/null
+trap 'kill $SRV 2>/dev/null; rm -rf "$T"; rm -f ./.nodata-check ./.nofs-check ./.nocomp-check ./.quiet-check' EXIT
 shoot() { # $1 size  $2 url  $3 out
   P=$(mktemp -d)
   "$B" --headless --user-data-dir="$P" --use-angle=swiftshader --enable-unsafe-swiftshader --hide-scrollbars \
@@ -282,43 +294,108 @@ print(f"✓ browser-check sectors: {m[1]} organs, matches {len(priced_secs)} dis
 EOF
 
 
-# ---- fear gauge (VIX): the page must actually be computing and applying a fear factor (not just
-# carrying the pure mood.js function unused) — data-fear is a live, smoothed reading; a market.json
-# with no "vix" field is an honest 0 (never a faked fever) ----
-shoot 390,844 "http://127.0.0.1:8766/#at=12:10" "$T/fear_ok"
-shoot 390,844 "http://127.0.0.1:8766/.nodata-check/" "$T/fear_no"
+# ---- label boxes (real Chromium): the page exposes every sector tag's box and every blob it
+# painted (data-labels / data-blobs, as painted this frame). No tag may touch a blob or another tag,
+# and none may leave the canvas — checked at phone and desktop width, in all three doored views.
+# A view where too few tags survive is a fail too (else "drop everything" would pass vacuously).
+for SIZE in 390,844 1440,900; do
+  shoot $SIZE "http://127.0.0.1:8766/#cell&idx=dow&day=$D_LAST&at=12:10" "$T/lb_dow_$SIZE"
+  shoot $SIZE "http://127.0.0.1:8766/#cell&day=$D_LAST&at=12:10" "$T/lb_sp_$SIZE"
+  shoot $SIZE "http://127.0.0.1:8766/#cell&idx=nasdaq&day=$D_LAST&at=12:10" "$T/lb_nas_$SIZE"
+done
 python3 - "$T" <<'EOF' || RC=1
-import json, re, sys
-t = sys.argv[1]
-bad = []
-mk = json.load(open("data/market.json"))
-dom = open(f"{t}/fear_ok.html").read()
-m = re.search(r'data-fear="([\d.]+)"', dom)
-if not m: bad.append("no data-fear reported with market.json present")
-elif "vix" not in mk and float(m[1]) != 0: bad.append(f"no vix in market.json, yet fear={m[1]} (faked fever)")
-elif "vix" in mk and float(m[1]) < 0: bad.append(f"fear={m[1]}, must be >= 0")
-if bad: print("✘ browser-check fear: " + "; ".join(bad)); sys.exit(1)
-print(f"✓ browser-check fear: data-fear={m[1]} ({'vix present' if 'vix' in mk else 'no vix: honest 0'})")
+import re, sys, html
+t = sys.argv[1]; bad = []; rows = []
+for size in ("390,844", "1440,900"):
+    for v in ("dow", "sp", "nas"):
+        dom = html.unescape(open(f"{t}/lb_{v}_{size}.html").read())
+        g = lambda k: (re.search(rf'id="cell"[^>]*data-{k}="([^"]*)"', dom) or [None, None])[1]
+        L, Bl, C = g("labels"), g("blobs"), g("canvas")
+        if L is None or Bl is None or C is None: bad.append(f"{v}@{size}: page did not report label/blob boxes"); continue
+        W, H = map(float, C.split(","))
+        labs = [tuple(map(float, x.split(","))) for x in L.split(";") if x]
+        blobs = [tuple(map(float, x.split(","))) for x in Bl.split(";") if x]
+        need = 3 if size.startswith("390") else 4
+        if len(labs) < need: bad.append(f"{v}@{size}: only {len(labs)} sector tags survive, want >= {need}")
+        if not blobs: bad.append(f"{v}@{size}: no blobs reported")
+        for i, b in enumerate(labs):
+            if b[0] < 0 or b[1] < 0 or b[2] > W or b[3] > H: bad.append(f"{v}@{size}: tag {i} {b} leaves the {W:.0f}x{H:.0f} canvas")
+            for j, o in enumerate(labs[:i]):
+                if b[0] < o[2] and b[2] > o[0] and b[1] < o[3] and b[3] > o[1]: bad.append(f"{v}@{size}: tags {j} and {i} overlap")
+            for (x, y, r) in blobs:
+                qx, qy = max(b[0], min(x, b[2])), max(b[1], min(y, b[3]))
+                if (qx - x) ** 2 + (qy - y) ** 2 < r * r: bad.append(f"{v}@{size}: tag {i} {b} covers a blob at ({x:.0f},{y:.0f}) r{r:.0f}"); break
+        rows.append(f"{v}@{size.split(',')[0]}:{len(labs)}tags/{len(blobs)}blobs")
+if bad: print("✘ browser-check labels: " + "; ".join(bad[:6])); sys.exit(1)
+print("✓ browser-check labels: no tag touches a blob or another tag or leaves the canvas (" + ", ".join(rows) + ")")
 EOF
 
 
-# ---- volume heartbeat: a live pulse when the market has recent volume; a market.json whose bars
-# carry no volume (the pre-heartbeat shape, or a genuinely shut/quiet market) must be an honest 1
-# (no fake breathing) ----
-shoot 390,844 "http://127.0.0.1:8766/#at=12:10" "$T/pulse_ok"
+# ---- vitals: the fear gauge and the heartbeat must be VISIBLE, not just present. Every expected
+# number is recomputed HERE from data/market.json (VIX level -> fear; the last 6 bars' combined
+# volume -> pulse amplitude) and must match what the page painted; the always-visible readout on
+# the mood block must say the same thing in words. A shut, quiet market (no volume, no vix: the
+# `.quiet-check` fixture) must be a hard zero: amplitude exactly 0, radius factor exactly 1,
+# no sector halo moving, no fear line. ----
+shoot 390,844 "http://127.0.0.1:8766/#at=12:10&help" "$T/vit_ok"
+shoot 390,844 "http://127.0.0.1:8766/.quiet-check/#at=12:10&help" "$T/vit_quiet"
+shoot 390,844 "http://127.0.0.1:8766/#cell&idx=dow&day=$D_LAST&at=12:10" "$T/vit_cell"
+shoot 390,844 "http://127.0.0.1:8766/.quiet-check/#cell&idx=dow&day=$D_LAST&at=12:10" "$T/vit_cellq"
 python3 - "$T" <<'EOF' || RC=1
-import json, re, sys
-t = sys.argv[1]
+import json, re, sys, html, datetime, zoneinfo
+t = sys.argv[1]; bad = []
 mk = json.load(open("data/market.json"))
-has_vol = any(b[2] is not None for i in mk["indexes"] for b in i["bars"])
-dom = open(f"{t}/pulse_ok.html").read()
-m = re.search(r'data-pulse="([\d.]+)"', dom)
-bad = []
-if not m: bad.append("no data-pulse reported")
-elif not has_vol and abs(float(m[1]) - 1) > 1e-6: bad.append(f"no volume in market.json, yet pulse={m[1]} (faked breathing)")
-elif float(m[1]) < 0.9 or float(m[1]) > 1.1: bad.append(f"pulse={m[1]} outside the documented subtle +-10% band")
-if bad: print("✘ browser-check pulse: " + "; ".join(bad)); sys.exit(1)
-print(f"✓ browser-check pulse: data-pulse={m[1]} ({'volume present' if has_vol else 'no volume: honest still'})")
+clamp = lambda x, lo, hi: max(lo, min(hi, x))
+def body(f): return html.unescape(open(f"{t}/{f}.html").read())
+def num(dom, k): m = re.search(rf'data-{k}="([\d.]+)"', dom); return float(m[1]) if m else None
+def text(dom): return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", dom))
+# --- with data
+dom = body("vit_ok"); tx = text(dom)
+vix = mk.get("vix", {}).get("last")
+fear, amp, pulse = num(dom, "fear"), num(dom, "pulseamp"), num(dom, "pulse")
+word = None
+if vix is None: bad.append("market.json has no vix: cannot verify the fear gauge (not a pass)")
+else:
+    want = clamp((vix - 12) / 18, 0, 1)
+    if fear is None or abs(fear - want) > 0.005: bad.append(f"data-fear={fear}, VIX {vix} says {want:.4f}")
+    if 14 <= vix < 30 and want < 0.1: bad.append(f"fear {want:.3f} is below visible on a normal-level VIX")
+    word = "calm" if vix < 14 else "watchful" if vix < 20 else "nervous" if vix < 30 else "fearful"
+    if f"Fear {round(vix)} · {word}" not in tx: bad.append(f"mood block does not read 'Fear {round(vix)} · {word}'")
+    if f"VIX {vix:.1f}, {word}" not in tx: bad.append(f"help does not state today's reading 'VIX {vix:.1f}, {word}'")
+    if not re.search(r"12 or below.*full at 30", tx): bad.append("help does not state the 12 / 30 thresholds")
+# expected pulse level: combined volume of the 6 bars up to the page's start bar, per volumeLevel()
+bars = mk["indexes"][0]["bars"]
+def hhmm(u):
+    d = datetime.datetime.fromtimestamp(u, zoneinfo.ZoneInfo("America/New_York")); return d.hour * 60 + d.minute
+i = next((k for k, b in enumerate(bars) if hhmm(b[0]) >= 12 * 60 + 10), len(bars) - 1)
+comb = []
+for k in range(max(0, i - 5), i + 1):
+    tot = sum((ix["bars"][k][2] or 0) for ix in mk["indexes"] if k < len(ix["bars"])); comb.append(tot or None)
+v = [x for x in comb if x]; lvl = 0 if len(v) < 2 else min(v[-1] / (sum(v) / len(v)), 2) / 2
+wamp = 0.01 + 0.05 * lvl if lvl > 0 else 0
+if lvl == 0: bad.append("no volume at the 12:10 bar: cannot verify the heartbeat (not a pass)")
+if amp is None or abs(amp - wamp) > 0.004: bad.append(f"data-pulseamp={amp}, volume says {wamp:.4f}")
+if amp is not None and amp < 0.02: bad.append(f"pulse amplitude {amp:.4f} < 2%: the heartbeat is not visible")
+if pulse is not None and amp is not None and abs(pulse - 1) > amp + 1e-4: bad.append(f"pulse {pulse} outside 1 +- {amp}")
+vw = "quiet" if lvl < .35 else "normal" if lvl < .65 else "busy"
+if f"Volume {vw}" not in tx: bad.append(f"mood block does not read 'Volume {vw}'")
+if f"volume {vw}, breathing" not in tx: bad.append("help does not state today's volume reading")
+# --- sector pulse in the cell (with data): organs beat on their own phases, visibly
+sp = re.search(r'id="cell"[^>]*data-spulse="([^"]*)"', body("vit_cell"))
+fs = [float(x) for x in sp[1].split(",")] if sp and sp[1] else []
+if len(fs) < 3: bad.append(f"cell reported {len(fs)} sector pulse factors")
+elif max(abs(f - 1) for f in fs) < 0.01 or max(fs) - min(fs) < 0.01: bad.append(f"sector pulse not visible: {fs}")
+# --- shut, quiet market: a hard zero
+q = body("vit_quiet"); qt = text(q)
+for k, want in (("pulseamp", 0.0), ("pulse", 1.0), ("fear", 0.0)):
+    if num(q, k) != want: bad.append(f"quiet market: data-{k}={num(q, k)}, must be exactly {want}")
+if "Volume closed" not in qt: bad.append("quiet market: mood block does not read 'Volume closed'")
+if re.search(r"Fear \d", qt): bad.append("quiet market: a Fear reading is shown with no VIX")
+if not re.search(r"no volume reading \(closed\)", qt): bad.append("quiet market: help does not say there is no volume reading")
+qs = re.search(r'id="cell"[^>]*data-spulse="([^"]*)"', body("vit_cellq"))
+if not qs or not qs[1] or any(float(x) != 1.0 for x in qs[1].split(",")): bad.append(f"quiet market: sector halos still move: {qs and qs[1]}")
+if bad: print("✘ browser-check vitals: " + "; ".join(bad)); sys.exit(1)
+print(f"✓ browser-check vitals: VIX {vix} -> fear {fear} ('{word}'), volume '{vw}' -> pulse amplitude {amp} (>=2%), sector factors {min(fs):.3f}..{max(fs):.3f}; quiet market exactly 0/1/0 and 'Volume closed'")
 EOF
 
 
@@ -328,6 +405,7 @@ EOF
 for FRAC in 0 0.5 1; do
   shoot 390,844 "http://127.0.0.1:8766/#day=$D_LAST&scrub=$FRAC" "$T/scrub_$FRAC"
 done
+shoot 390,844 "http://127.0.0.1:8766/.quiet-check/#day=$D_LAST&scrub=0.5" "$T/scrub_quiet"
 python3 - "$T" "$D_LAST" <<'EOF' || RC=1
 import json, re, sys
 t, date = sys.argv[1], sys.argv[2]
@@ -344,8 +422,31 @@ for frac in ("0", "0.5", "1"):
     want_pct = round(want / (nbars - 1) * 100)
     if not m: bad.append(f"scrub={frac}: track aria-valuenow not reported"); continue
     if abs(int(m[1]) - want_pct) > 1: bad.append(f"scrub={frac}: track at {m[1]}%, want ~{want_pct}% (bar {want} of {nbars})")
+# the fill and handle wear the mood colour (inline --mood on the track, and the CSS reads it), the
+# handle's glow is driven by the heartbeat (--beat), a faint sparkline of the day sits behind the
+# track (one point per bar, not flat), and the clock rides INSIDE the track next to the handle
+lefts = []
+for frac in ("0", "0.5", "1"):
+    dom = open(f"{t}/scrub_{frac}.html").read()
+    tm = re.search(r'id="track"[^>]*style="([^"]*)"', dom)
+    if not tm or not re.search(r"--mood: ?#[0-9a-f]{6}", tm[1]): bad.append(f"scrub={frac}: track carries no mood colour ({tm and tm[1]})")
+    if not re.search(r"\.track i \{[^}]*background: var\(--mood\)", dom) or not re.search(r"\.track b \{[^}]*background: var\(--mood\)", dom): bad.append("fill/handle CSS is not tinted by --mood")
+    if not re.search(r"\.track b \{[^}]*box-shadow:[^;]*var\(--beat\)", dom): bad.append("handle glow is not driven by --beat")
+    bm = re.search(r"--beat: ?([\d.]+)", tm[1]) if tm else None
+    if not bm or not 0 <= float(bm[1]) <= 1: bad.append(f"scrub={frac}: no --beat in 0..1")
+    pts = re.search(r'id="sparkLine" points="([^"]*)"', dom)
+    ys = [float(q.split(",")[1]) for q in pts[1].split()] if pts else []
+    if len(ys) != nbars: bad.append(f"scrub={frac}: sparkline has {len(ys)} points, the day has {nbars} bars")
+    elif max(ys) - min(ys) < 5: bad.append("sparkline is flat")
+    cm = re.search(r'<div class="track" id="track".*?<span class="clock num" id="clock" style="left: ?([\d.]+)px', dom, re.S)
+    if not cm: bad.append(f"scrub={frac}: the clock is not placed inside the track by the handle")
+    else: lefts.append(float(cm[1]))
+if len(lefts) == 3 and not (lefts[0] < lefts[1] < lefts[2]): bad.append(f"clock does not travel with the handle: {lefts}")
+qd = open(f"{t}/scrub_quiet.html").read()
+qb = re.search(r"--beat: ?([\d.]+)", (re.search(r'id="track"[^>]*style="([^"]*)"', qd) or [0, ""])[1])
+if not qb or float(qb[1]) != 0: bad.append(f"quiet market: handle glow --beat={qb and qb[1]}, must be exactly 0")
 if bad: print("✘ browser-check scrub: " + "; ".join(bad)); sys.exit(1)
-print(f"✓ browser-check scrub: #scrub=0/0.5/1 land on the expected bars (of {nbars})")
+print(f"✓ browser-check scrub: #scrub=0/0.5/1 land on the expected bars (of {nbars}); mood tint, breathing glow, {nbars}-point sparkline, clock at handle {lefts}")
 EOF
 
 exit $RC

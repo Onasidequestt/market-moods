@@ -103,10 +103,15 @@
     "Energy", "Utilities", "Real Estate", "Materials"];
   function sectorRank(name) { const i = SECTOR_ORDER.indexOf(name); return i < 0 ? SECTOR_ORDER.length : i; }
 
-  // fear gauge: VIX's LEVEL (not its own daily move) says how nervous the market is. Calm
-  // (<=15) contributes nothing; 35+ is full fear. A pure curve — the page's own slow EMA does
-  // the smoothing, since VIX moves far slower than the blobs (idea #2's own stated risk).
-  const fear = level => clamp((level - 15) / 20, 0, 1);
+  // fear gauge: VIX's LEVEL (not its own daily move) says how nervous the market is. 12 or less
+  // is fully calm (contributes nothing); 30+ is full fear. A normal ~16 day therefore reads about
+  // 0.2 — visible, not saturated (the first 15..35 range left a normal day at 0.05, invisible).
+  // ponytail: a fixed 12..30 band, not relative to the trailing VIX; upgrade = normalise against
+  // the last N sessions' VIX closes once fetch.py stores more than the current session.
+  const FEAR_LO = 12, FEAR_HI = 30;
+  const fear = level => clamp((level - FEAR_LO) / (FEAR_HI - FEAR_LO), 0, 1);
+  // the word the mood block prints beside the VIX level
+  const fearWord = level => level < 14 ? "calm" : level < 20 ? "watchful" : level < 30 ? "nervous" : "fearful";
 
   // volume heartbeat: how heavy the last few bars traded relative to their own recent average —
   // 0 (still) when the market is shut (fewer than 2 real readings) or the average itself is 0,
@@ -119,6 +124,29 @@
     return avg > 0 ? clamp(v[v.length - 1] / avg, 0, 2) / 2 : 0;
   }
 
+  // heartbeat strength: the lamp's radius swings +-(1% + 5% x level). A normal beat (level 0.5) is
+  // 3.5%, a busy one 6%, a quiet one ~2%. Exactly 0 when there is no volume reading (level 0):
+  // a shut market is a hard, visible stillness, never a faint wobble.
+  const pulseAmp = level => level > 0 ? 0.01 + 0.05 * clamp(level, 0, 1) : 0;
+  const volumeWord = level => !(level > 0) ? "closed" : level < 0.35 ? "quiet" : level < 0.65 ? "normal" : "busy";
+
+  // the day's shape as one series: mean move (%) of the given indexes at every bar, from their own
+  // prev_close — what the scrubber's faint sparkline draws. Fewer bars than any index has = the
+  // shortest one, so a ragged index never yields NaN.
+  function avgSeries(indexes) {
+    const n = Math.min(...indexes.map(ix => ix.bars.length));
+    return Array.from({ length: n }, (_, k) => indexes.reduce((a, ix) => a + (ix.bars[k][1] / ix.prev_close - 1) * 100, 0) / indexes.length);
+  }
+
+  // short tags for phone width — whole words, never a slice (a sliced tag reads as "Eng")
+  const SECTOR_SHORT = { "Information Technology": "Tech", "Consumer Discretionary": "Cons. Disc.",
+    "Consumer Staples": "Staples", "Communication Services": "Comm.", "Health Care": "Health", "Real Estate": "Real Est." };
+  const sectorShort = name => SECTOR_SHORT[name] || name;
+
+  // a stable identity hue per sector (degrees), from its fixed rank: an organ's halo keeps its
+  // colour whatever the day's move does to the blobs inside it.
+  const sectorHue = name => (sectorRank(name) * 137.5 + 200) % 360;
+
   // scrubber: a fraction of the track (0..1) -> the nearest whole bar index. The same function
   // drives both a real pointer drag and the page's own #scrub= test hook, so what the mouse does
   // and what a link does are provably the same rule (rule 2: nothing to verify twice, separately).
@@ -126,6 +154,6 @@
 
   const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
                 against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER,
-                fear, volumeLevel, scrubPos };
+                fear, fearWord, volumeLevel, pulseAmp, volumeWord, avgSeries, sectorHue, sectorShort, scrubPos };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Mood = api;
 })(this);

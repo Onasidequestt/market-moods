@@ -58,6 +58,9 @@
   .mood .word { font-size: clamp(38px, 7vw, 76px); font-weight: 200; letter-spacing: -.02em; line-height: 1;
     text-shadow: 0 2px 30px rgba(0, 0, 0, .5); transition: color 1.2s ease; }
   .mood .sub { margin-top: 10px; font-size: 13px; color: var(--ink-2); letter-spacing: .04em; }
+  .gauges { margin-top: 4px; font-size: 12px; color: var(--ink-3); letter-spacing: .03em; display: flex; gap: 6px 14px; justify-content: center; flex-wrap: wrap; }
+  .gauges span:empty { display: none; }
+  .gauges b { font-weight: 600; color: var(--ink-2); }
   .mood .key .short { display: none; }
   .mood .key { margin: 6px auto 0; padding: 0 16px; font-size: 12px; color: var(--ink-3); max-width: 560px; }
   .tags { position: fixed; inset: 0; pointer-events: none; }
@@ -95,16 +98,23 @@
   .btn[hidden] { display: none; }
   .btn.day { height: 28px; padding: 0 11px; font-size: 12px; color: var(--ink-2); }
   .btn.day[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-color: var(--ink); }
-  .timeline { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-  .timeline .clock { font-size: 12.5px; color: var(--ink-2); min-width: 78px; }
-  .track { position: relative; flex: 1; height: 18px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+  .timeline { display: flex; align-items: center; gap: 10px; margin: 20px 0 12px; }
+  .track { position: relative; flex: 1; height: 26px; display: flex; align-items: center; cursor: pointer; touch-action: none;
+    --mood: #f0a030; --beat: 0; }
   .track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 3px; transform: translateY(-50%);
     border-radius: 3px; background: var(--line); }
+  .track svg.spark { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .track svg.spark polyline { fill: none; stroke: var(--mood); stroke-width: 1.4; opacity: .38; vector-effect: non-scaling-stroke;
+    stroke-linejoin: round; }
   .track i { position: absolute; left: 0; top: 50%; height: 3px; transform: translateY(-50%); width: 0;
-    background: var(--ink-2); border-radius: 3px; pointer-events: none; }
-  .track b { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: var(--ink);
-    left: 0; transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(0, 0, 0, .5); pointer-events: none; }
+    background: var(--mood); border-radius: 3px; pointer-events: none; }
+  .track b { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: var(--mood);
+    border: 2px solid rgba(244, 236, 247, .9); box-sizing: border-box;
+    left: 0; transform: translate(-50%, -50%); pointer-events: none;
+    box-shadow: 0 0 calc(5px + var(--beat) * 13px) calc(var(--beat) * 4px) var(--mood); }
   .track:active b, .track.scrubbing b { transform: translate(-50%, -50%) scale(1.25); }
+  .track .clock { position: absolute; bottom: 100%; left: 0; margin-bottom: 1px; font-size: 12px; color: var(--ink-2);
+    white-space: nowrap; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
   .timeline .ends { font-size: 11px; color: var(--ink-3); }
   .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .idx { background: var(--glass); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px;
@@ -182,6 +192,7 @@
   <div class="mood" aria-live="polite">
     <div class="word" id="moodWord"></div>
     <div class="sub num" id="moodSub"></div>
+    <div class="gauges num" id="gauges"><span id="gFear"></span><span id="gVol"></span></div>
     <div class="key"><span class="long">Colour = today's move · higher = up · bigger = bigger move · restless = choppy</span><span class="short">colour = move · high = up · big = big move · restless = choppy</span></div>
   </div>
 
@@ -202,10 +213,9 @@
     <div class="days" id="days" role="group" aria-label="Trading day to replay" hidden></div>
     <div class="timeline" id="timeline" hidden>
       <button class="btn" id="playBtn" type="button" aria-label="Pause replay"><svg viewBox="0 0 16 16" aria-hidden="true" id="playIcon"><path d="M4 2h3v12H4zm5 0h3v12H9z"/></svg></button>
-      <span class="clock num" id="clock"></span>
       <span class="ends">9:30</span>
       <div class="track" id="track" role="slider" aria-label="Scrub the replay" tabindex="0"
-           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="progress"></i><b></b></div>
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><svg class="spark" id="spark" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline id="sparkLine" points=""/></svg><i id="progress"></i><b></b><span class="clock num" id="clock"></span></div>
       <span class="ends">4:00</span>
     </div>
     <div class="readouts" id="readouts"></div>
@@ -221,10 +231,10 @@
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
-    <dt>Fear</dt><dd>The VIX, the market's own "fear gauge", warms the whole lamp's glow and quickens its bubbling a little on top of each index's own move when it runs high. VIX moves slowly, so this is a subtle, smoothed fever, not a jolt.</dd>
-    <dt>Heartbeat</dt><dd>The whole lamp breathes with how much is actually trading: a subtle pulse in size, stronger when recent volume is heavy, gone still when the market is shut.</dd>
-    <dt>Replay</dt><dd>When the market is closed, drag the dot on the line at the bottom to scrub back and forth through that trading day and watch the lamp move.</dd>
-    <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. Companies cluster by sector — tech, energy, health care and the rest — each cluster labelled and coloured by its own average move, so you can see which part of the market is sick or healthy. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
+    <dt>Fear</dt><dd id="helpFear">The VIX, the market's own fear gauge.</dd>
+    <dt>Heartbeat</dt><dd id="helpBeat">The lamp breathes with how much is trading.</dd>
+    <dt>Replay</dt><dd>When the market is closed, drag the dot on the line at the bottom to scrub back and forth through that trading day and watch the lamp move. The dot and the line take the mood colour, the dot glows in time with the heartbeat, the time floats above it, and the faint wavy line behind the track is the day's average move.</dd>
+    <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. Companies cluster by sector — tech, energy, health care and the rest. Each cluster sits in a soft halo of its own fixed sector colour, the blobs inside keep the move colour, and the halo breathes with the heartbeat. A name tag on a dark pill sits beside each cluster big enough to label; on a phone the smallest clusters go unlabelled. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
   <div class="ramp-l"><span>−1%</span><span>−0.5%</span><span>0</span><span>+0.5%</span><span>+1%</span></div>
@@ -268,7 +278,8 @@
   // 5-minute bars traded (summed across all four indexes — the market's own combined volume)
   // relative to their own recent average. Stays still (0) when the market is shut: no live bars
   // means no real recent volume to measure, and a shut market IS quiet (rule 6, honest, not faked).
-  let volShown = 0, breathPhase = 0;
+  let volShown = 0, breathPhase = 0, vitalsInit = false;
+  let pulseAmp = 0, pulseNow = 1, beatNow = 0;   // this frame's heartbeat: amplitude (0 = still), radius factor, 0..1 glow
 
   // ---------- readouts ----------
   function buildReadouts() {
@@ -418,7 +429,7 @@
         vec3 bg = mix(uBgBot, uBgTop, smoothstep(0.0, 1.0, y));
         // fear gauge: a nervous VIX widens the lamp's warm floor glow on top of the mood's own
         // colour — never its own colour (0 fear = exactly the old look, bit-for-bit)
-        bg += uHeat * (0.22 + 0.16 * uFear) * pow(1.0 - y, 3.0);
+        bg += uHeat * (0.22 + 0.5 * uFear) * pow(1.0 - y, 3.0);
         float e = 0.035;
         float body = smoothstep(1.0 - e, 1.0 + e, f);
         float glow = smoothstep(0.08, 1.0, f) * (1.0 - body);
@@ -488,7 +499,7 @@
       L.pct += (pct - L.pct) * k;
       L.h += (Mood.height(pct) - L.h) * k;
       L.sz += (Mood.size(pct) - L.sz) * k;
-      L.sp += (Mood.speed(chop) * (reduced ? 0.4 : 1) * (1 + 0.3 * fearShown) - L.sp) * k;
+      L.sp += (Mood.speed(chop) * (reduced ? 0.4 : 1) * (1 + 0.6 * fearShown) - L.sp) * k;
       L.chop = chop; L.rawPct = pct;
       const c = Mood.colour(L.pct);
       for (let j = 0; j < 3; j++) L.col[j] += (c[j] - L.col[j]) * k;
@@ -496,25 +507,34 @@
       sum += pct;
     });
     avgPctShown = sum / data.indexes.length;
-    // VIX moves slowly; a long time constant (~2 minutes to settle) keeps the fever feeling like
-    // a mood, not a jittery reaction to one noisy tick (idea #2's own risk, addressed here).
+    // VIX barely moves inside a session, so its target is close to constant; a ~7 s time constant
+    // (settled in ~20 s) eases the fever in without a jolt. The first frame snaps: there is no
+    // earlier reading to smooth from. (The old ~100 s constant plus a 15..35 range left it at 0.02
+    // after a minute, measured; the range, not just the EMA, was the ceiling.)
     const fearTarget = data.vix ? Mood.fear(data.vix.last) : 0;
-    fearShown += (fearTarget - fearShown) * (1 - Math.exp(-dt * 0.01));
+    fearShown = vitalsInit ? fearShown + (fearTarget - fearShown) * (1 - Math.exp(-dt * 0.15)) : fearTarget;
     // combined volume of the last 6 bars up to `pos`, summed across all four indexes, each
     // index's own null bars dropped (never zeroed) before Mood.volumeLevel sees them
     const fl = Math.max(0, Math.floor(pos)), win = data.indexes.map(ix => ix.bars.slice(Math.max(0, fl - 5), fl + 1));
     const combined = win[0] ? win[0].map((_, k) => win.reduce((sum, b) => sum + (b[k] && b[k][2] != null ? b[k][2] : 0), 0) || null) : [];
     const volTarget = Mood.volumeLevel(combined);
-    volShown += (volTarget - volShown) * (1 - Math.exp(-dt * 0.3));   // a real heartbeat, faster than the fear gauge
-    breathPhase += dt * 1.3;
+    // no volume reading = a hard stop (0 at once, not an ease-down): a shut market is stillness
+    volShown = !vitalsInit || volTarget === 0 ? volTarget : volShown + (volTarget - volShown) * (1 - Math.exp(-dt * 0.5));
+    vitalsInit = true;
+    breathPhase += dt * (1.6 + 1.2 * volShown);   // busier = quicker; about a 3 s breath on a normal day
+    pulseAmp = Mood.pulseAmp(volShown);
+    const wave = Math.sin(breathPhase);
+    pulseNow = 1 + pulseAmp * wave;
+    beatNow = pulseAmp > 0 ? 0.5 + 0.5 * wave : 0;
+    track.style.setProperty("--beat", beatNow.toFixed(3));   // the scrubber handle's glow breathes with the lamp
+    const B = document.body.dataset;   // read by browser-check.sh
+    B.pulse = pulseNow.toFixed(4); B.pulseamp = pulseAmp.toFixed(4); B.fear = fearShown.toFixed(4);
   }
 
   function draw() {
     const W = canvas.width, H = canvas.height, aspect = W / H;
     const laneW = aspect / 4;
-    const pulse = 1 + 0.05 * volShown * Math.sin(breathPhase);   // the heartbeat: still (1) when volShown is 0
-    const baseR = Math.min(laneW * 0.34, 0.095) * pulse;
-    document.body.dataset.pulse = pulse.toFixed(4);   // read by browser-check.sh
+    const baseR = Math.min(laneW * 0.34, 0.095) * pulseNow;   // the heartbeat: exactly 1 when pulseAmp is 0
     const band = travel(baseR * 1.4 * 1.25);   // biggest blob (size 1.4) with its droplets bunched: body edge at (Σr⁴)^¼ ≈ 1.23 R
     let n = 0;
     lanes.forEach((L, i) => {
@@ -546,10 +566,18 @@
     gl.uniform3f(uBgBot, 0.07, 0.035, 0.08);
     gl.uniform3f(uHeat, heat[0], heat[1], heat[2]);
     gl.uniform1f(uFear, fearShown);
-    document.body.dataset.fear = fearShown.toFixed(4);   // read by browser-check.sh
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  let sparkDay = null;
+  // the faint wave behind the track: the day's mean move across all four indexes, bar by bar.
+  // ponytail: min-max scaled per day, so a flat day still looks wavy (it shows SHAPE, not size;
+  // the mood colour and the cards carry the size). Upgrade: a shared +-1% scale across days.
+  function drawSpark() {
+    const ser = Mood.avgSeries(data.indexes), lo = Math.min(...ser), hi = Math.max(...ser), span = hi - lo || 1;
+    $("sparkLine").setAttribute("points", ser.map((v, k) => `${(k / Math.max(1, ser.length - 1) * 100).toFixed(2)},${(88 - (v - lo) / span * 76).toFixed(2)}`).join(" "));
+    $("spark").dataset.n = ser.length;
+  }
   function ui() {
     if (mode === "none") return;
     data.indexes.forEach((ix, i) => {
@@ -574,6 +602,14 @@
     $("moodWord").textContent = Mood.moodWord(avgPctShown);
     $("moodWord").style.color = hex(Mood.colour(avgPctShown).map(v => v * 0.35 + 0.65));
     $("moodSub").textContent = "Average move " + fmtPct(avgPctShown);
+    const vx = data.vix ? data.vix.last : null, fw = vx == null ? null : Mood.fearWord(vx), vw = Mood.volumeWord(volShown);
+    $("gFear").innerHTML = vx == null ? "" : `Fear <b>${Math.round(vx)}</b> · ${fw}`;
+    $("gVol").innerHTML = `Volume <b>${vw}</b>`;
+    $("helpFear").textContent = "The VIX, the market's own fear gauge. At 12 or below the lamp is fully calm; from there the glow warms and the bubbling quickens, up to full at 30. " +
+      (vx == null ? "There is no VIX reading right now, so the lamp shows no fear effect." : `Today: VIX ${vx.toFixed(1)}, ${fw} (${Math.round(Mood.fear(vx) * 100)}% of the way to full). It is the line under the mood word.`);
+    $("helpBeat").textContent = "The lamp swells and shrinks with how heavily the last half hour traded against its own recent average: quiet below 35%, busy above 65% of the way to double. The beat is 1% to 6% of the lamp's size. " +
+      (volShown > 0 ? `Right now: volume ${vw}, breathing ${(pulseAmp * 100).toFixed(1)}%.` : "Right now there is no volume reading (closed), so the lamp is exactly still.");
+    document.querySelector(".track").style.setProperty("--mood", hex(Mood.colour(avgPctShown)));
     const barT = data.indexes[0].bars[Math.min(Math.round(pos), data.indexes[0].bars.length - 1)][0];
     const day = dayLabel(curDay, { weekday: "short", month: "short", day: "numeric" });
     if (mode === "live") {
@@ -582,6 +618,9 @@
       setStatus("replay", (stale ? "Feed behind · replaying " : "Market closed · replaying ") + day);
       $("clock").textContent = fmtET(barT, { hour: "numeric", minute: "2-digit" }) + " ET";
       const pct100 = (pos / lastPos() * 100);
+      const tw = track.clientWidth, cw = $("clock").offsetWidth;   // the time rides above the dot, kept inside the track
+      $("clock").style.left = Math.max(0, Math.min(tw - cw, tw * pct100 / 100 - cw / 2)).toFixed(1) + "px";
+      if (sparkDay !== curDay) { sparkDay = curDay; drawSpark(); }
       $("progress").style.width = pct100.toFixed(2) + "%";
       track.querySelector("b").style.left = pct100.toFixed(2) + "%";
       track.setAttribute("aria-valuenow", Math.round(pct100));
@@ -676,24 +715,38 @@
   // everywhere else: colour = move, height = up floats). Rule 1: one shared layout function used
   // by every doored index (Dow/S&P/Nasdaq), driven only by mood.js's normSector/sectorRank so it
   // never special-cases one source's raw sector strings.
-  let cellSectors = [];   // exposed for cellDraw's labels + browser-check.sh: [{name, pct, x, y, n}]
-  function sectorLayout(list, pcts, g) {
-    const agg = new Map();   // canonical sector name -> { sum, n }
+  let cellSectors = [];   // exposed for cellDraw's labels + browser-check.sh: [{name, pct, x, y, n, orR}]
+  function sectorLayout(list, pcts, rr, g) {
+    const agg = new Map();   // canonical sector name -> { sum, n, a2 }  (a2 = sum of member radius^2)
     list.forEach((x, n) => {
       const name = Mood.normSector(x.c.sec || "");
-      const a = agg.get(name) || { sum: 0, n: 0 }; a.sum += pcts[n]; a.n++; agg.set(name, a);
+      const a = agg.get(name) || { sum: 0, n: 0, a2: 0 }; a.sum += pcts[n]; a.n++; a.a2 += Math.max(1.7, rr[n]) ** 2; agg.set(name, a);
     });
     const present = [...agg.keys()].sort((a, b) => Mood.sectorRank(a) - Mood.sectorRank(b));
     const cols = present.length || 1;
-    const spacing = Math.min(g.R * 1.5 / Math.max(1, cols - 1), g.R * 0.62);
-    const out = new Map();   // sector name -> { pct, x, y, n }
-    present.forEach((name, i) => {
-      const a = agg.get(name), pct = a.sum / a.n;
-      const x = g.cx + (i - (cols - 1) / 2) * (cols > 1 ? spacing : 0);
-      const y = g.cy - (Mood.heightIn(pct) - 0.5) * 2 * g.R * 0.72;
-      out.set(name, { name, pct, n: a.n, x: clampN(x, g.cx - g.R * 0.8, g.cx + g.R * 0.8), y });
+    // each organ is a disc big enough to hold its members (area follows their blobs), then the
+    // discs are pushed apart so no two organs touch; the start points still follow the rules
+    // (fixed left-to-right order, height = the sector's own average move) — separation wins.
+    const orgs = present.map((name, i) => {
+      const a = agg.get(name), pct = a.sum / a.n, orR = Math.sqrt(a.a2) * 1.1 + 6;
+      return { name, pct, n: a.n, orR,
+        x: g.cx + (i - (cols - 1) / 2) * (cols > 1 ? Math.min(g.R * 1.5 / (cols - 1), g.R * 0.62) : 0),
+        y: g.cy - (Mood.heightIn(pct) - 0.5) * 2 * g.R * 0.6 };
     });
-    return out;
+    const home = orgs.map(o => [o.x, o.y]);
+    for (let it = 0; it < 120; it++) {
+      orgs.forEach((o, i) => { o.x += (home[i][0] - o.x) * 0.02; o.y += (home[i][1] - o.y) * 0.02; });
+      for (let i = 0; i < orgs.length; i++) for (let j = i + 1; j < orgs.length; j++) {
+        const A = orgs[i], B = orgs[j], dx = B.x - A.x, dy = B.y - A.y, min = A.orR + B.orR + 14, d = Math.hypot(dx, dy) || 0.01;
+        if (d >= min) continue;
+        const push = (min - d) / d / 2; A.x -= dx * push; A.y -= dy * push; B.x += dx * push; B.y += dy * push;
+      }
+      for (const o of orgs) {
+        const dx = o.x - g.cx, dy = o.y - g.cy, d = Math.hypot(dx, dy), lim = Math.max(0, g.R * 0.95 - o.orR);
+        if (d > lim) { o.x = g.cx + dx / d * lim; o.y = g.cy + dy / d * lim; }
+      }
+    }
+    return new Map(orgs.map(o => [o.name, o]));
   }
   function cellStep(dt) {
     const S = cellSession(), g = cellG = cellGeom();
@@ -703,7 +756,7 @@
     const pcts = list.map(x => Mood.movePct(x.m, p));
     const rr = Mood.radii(list.map((x, n) => cellSize === "cap" ? x.c.cap : Mood.size(pcts[n]) ** 2),
                           g.R * 0.95, list.length > 150 ? 0.4 : 0.44);
-    const sectors = sectorLayout(list, pcts, g);
+    const sectors = sectorLayout(list, pcts, rr, g);
     cellSectors = [...sectors.values()];
     const k = 1 - Math.exp(-dt * 2.5), fl = Math.floor(p), fresh = [];
     list.forEach((x, n) => {
@@ -720,13 +773,13 @@
       // grows gently with the organ's member count (a lone company barely jitters; a big organ
       // spreads more) — never wider than the lane between neighbouring organs.
       const sec = sectors.get(Mood.normSector(x.c.sec || ""));
-      const clusterR = Math.min(g.R * 0.34, g.R * 0.09 * Math.sqrt(sec.n));
+      const clusterR = sec.orR * 0.3;
       N.tx = clampN(sec.x + (N.seed - 0.5) * 2 * clusterR, g.cx - g.R * 0.94, g.cx + g.R * 0.94);
       N.ty = clampN(sec.y + (hashS(x.c.s + "~y") - 0.5) * 2 * clusterR, g.cy - g.R * 0.94, g.cy + g.R * 0.94);
     });
     const nodes = [...cellNodes.values()];
     for (const N of fresh) { N.x = N.tx; N.y = N.ty; }
-    relax(nodes, g, fresh.length > 20 ? 240 : 8, fresh.length > 20 ? 0.08 : 0.03);
+    relax(nodes, g, fresh.length > 20 ? 240 : 8, fresh.length > 20 ? 0.16 : 0.05);
   }
   // push overlapping blobs apart (big ones give way less) and keep every blob inside the membrane
   function relax(nodes, g, iters, pull) {
@@ -773,16 +826,39 @@
     ctx.lineWidth = 2; ctx.strokeStyle = rgba(L.col, 0.85); ctx.stroke();
     let n = 0;
     const nodes = [...cellNodes.values()].sort((a, b) => b.r - a.r);
+    // per-sector pulse: every organ breathes with the market's heartbeat (same amplitude, so a
+    // shut market is still), each on its own phase offset so the organs beat as separate bodies.
+    // Halo swings the full amplitude; the blobs inside swing half of it, so they never collide.
+    const groups = new Map();   // sector name -> { nodes, wave, f, cx, cy, R }
+    for (const N of nodes) {
+      const name = Mood.normSector(N.c.sec || ""); let G = groups.get(name);
+      if (!G) { G = { name, nodes: [], wave: Math.sin(breathPhase + Mood.sectorRank(name) * 0.9) }; G.f = 1 + pulseAmp * G.wave; groups.set(name, G); }
+      G.nodes.push(N);
+    }
+    for (const G of groups.values()) {
+      let wx = 0, wy = 0, w = 0;
+      for (const N of G.nodes) { wx += N.x * N.r * N.r; wy += N.y * N.r * N.r; w += N.r * N.r; }
+      G.cx = wx / w; G.cy = wy / w;
+      G.R = G.nodes.reduce((m, N) => Math.max(m, Math.hypot(N.x - G.cx, N.y - G.cy) + N.r), 0) + 7;
+      const hue = Mood.sectorHue(G.name), hr = G.R * G.f;
+      const halo = ctx.createRadialGradient(G.cx, G.cy, hr * 0.15, G.cx, G.cy, hr);
+      halo.addColorStop(0, `hsla(${hue},75%,62%,.30)`); halo.addColorStop(0.75, `hsla(${hue},75%,62%,.16)`); halo.addColorStop(1, `hsla(${hue},75%,62%,0)`);
+      ctx.beginPath(); ctx.arc(G.cx, G.cy, hr, 0, Math.PI * 2); ctx.fillStyle = halo; ctx.fill();
+      ctx.lineWidth = 1.2; ctx.strokeStyle = `hsla(${hue},75%,66%,.42)`; ctx.stroke();
+    }
+    const drawn = [];   // [x, y, r] as actually painted: what the labels dodge and browser-check.sh audits
     for (const N of nodes) {
       const a = (0.55 + 0.45 * Math.min(N.sp, 2.2)) * N.r * 0.12;           // restless = choppy
       N.dx = N.x + Math.sin(N.ph * 1.7 + N.seed * 6.28) * a; N.dy = N.y + Math.cos(N.ph * 1.3 + N.seed * 9.1) * a;
-      ctx.beginPath(); ctx.arc(N.dx, N.dy, N.r, 0, Math.PI * 2);
+      const G = groups.get(Mood.normSector(N.c.sec || "")), rd = N.r * (1 + (G.f - 1) * 0.5);
+      ctx.beginPath(); ctx.arc(N.dx, N.dy, rd, 0, Math.PI * 2);
       ctx.fillStyle = rgba(N.col, 1); ctx.fill();
-      if (N.r > 3) { ctx.lineWidth = 1; ctx.strokeStyle = "rgba(10,6,16,.45)"; ctx.stroke(); }
+      if (rd > 3) { ctx.lineWidth = 1; ctx.strokeStyle = "rgba(10,6,16,.45)"; ctx.stroke(); }
       if (Mood.against(N.rawPct, L.rawPct)) {
-        ctx.beginPath(); ctx.arc(N.dx, N.dy, N.r + 1.6, 0, Math.PI * 2);
-        ctx.lineWidth = N.r > 6 ? 1.8 : 1.1; ctx.strokeStyle = "rgba(255,255,255,.88)"; ctx.stroke();
+        ctx.beginPath(); ctx.arc(N.dx, N.dy, rd + 1.6, 0, Math.PI * 2);
+        ctx.lineWidth = rd > 6 ? 1.8 : 1.1; ctx.strokeStyle = "rgba(255,255,255,.88)"; ctx.stroke();
       }
+      drawn.push([N.dx, N.dy, rd + (rd > 6 ? 1.8 : 1.1)]);
       n++;
     }
     ctx.fillStyle = "rgba(20,11,24,.88)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -790,21 +866,46 @@
       ctx.font = `600 ${Math.min(14, Math.round(N.r * 0.5))}px ui-sans-serif, -apple-system, "Segoe UI", sans-serif`;
       ctx.fillText(N.s, N.dx, N.dy);
     }
-    // sector organ labels: one small tag per present sector, above its own cluster, coloured by
-    // its own average move — kept uncluttered by shrinking with device width and by only naming
-    // the organ (never every member), so 11 sectors never reads as 11 sentences at 390px.
-    const small = innerWidth < 480;
-    ctx.font = `600 ${small ? 9 : 11}px ui-sans-serif, -apple-system, "Segoe UI", sans-serif`;
-    ctx.textBaseline = "alphabetic";
-    for (const sec of cellSectors) {
-      const memberR = [...cellNodes.values()].filter(N => Mood.normSector(N.c.sec || "") === sec.name)
-        .reduce((mx, N) => Math.max(mx, N.r), 0);
-      const ly = sec.y - memberR - 6;
-      ctx.fillStyle = rgba(Mood.colour(sec.pct), 0.92);
-      ctx.fillText(small ? sec.name.replace("Information Technology", "Tech").replace("Consumer Discretionary", "Cons. Disc.")
-        .replace("Consumer Staples", "Cons. Staples").replace("Communication Services", "Comm.").slice(0, 14) : sec.name,
-        sec.x, ly);
+    // sector name tags, drawn after everything on a dark pill. A tag goes where it touches no blob,
+    // no other tag and stays inside the canvas: tried above the organ, below, then around it; if
+    // nowhere is clear it is DROPPED (an unlabelled organ beats a tag printed over a company).
+    // At phone width the smallest organs (fewer than 3 companies) get no tag at all.
+    // ponytail: 12 candidate spots per organ, greedy biggest-first; upgrade = a small force layout.
+    const small = innerWidth < 480, fs = small ? 10 : 12, W = innerWidth;
+    ctx.font = `600 ${fs}px ui-sans-serif, -apple-system, "Segoe UI", sans-serif`;
+    ctx.textBaseline = "middle";
+    const placed = [], yLo = g.cy - g.R - 6, yHi = g.cy + g.R + 6;
+    const nEl = $("notice"), nR = nEl.classList.contains("on") ? nEl.getBoundingClientRect() : null;   // the note under the cell is text too
+    const avoid = nR ? [[nR.left, nR.top, nR.right, nR.bottom]] : [];
+    const hit = (b) => placed.concat(avoid).some(o => b[0] < o[2] + 3 && b[2] > o[0] - 3 && b[1] < o[3] + 3 && b[3] > o[1] - 3) ||
+      drawn.some(([x, y, r]) => { const qx = Math.max(b[0], Math.min(x, b[2])), qy = Math.max(b[1], Math.min(y, b[3])); return (qx - x) ** 2 + (qy - y) ** 2 < (r + 4) ** 2; });
+    const gl2 = [...groups.values()].sort((a, b) => b.nodes.length - a.nodes.length);
+    for (const G of gl2) {
+      if (small && G.nodes.length < 3) continue;
+      const text = small ? Mood.sectorShort(G.name) : G.name, w = Math.ceil(ctx.measureText(text).width) + 12, h = fs + 8;
+      const sec = cellSectors.find(o => o.name === G.name), pct = sec ? sec.pct : 0, hr = G.R * G.f;
+      const cands = [[0, -1], [0, 1], [-1, 0], [1, 0], [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]];
+      let box = null;
+      for (const [ux, uy] of cands) {
+        for (const gap of [2, 10]) {
+          let x = G.cx + ux * (hr + gap + (ux ? w / 2 : 0)), y = G.cy + uy * (hr + gap + (uy ? h / 2 : 0));
+          x = Math.max(4 + w / 2, Math.min(W - 4 - w / 2, x)); y = Math.max(yLo + h / 2, Math.min(yHi - h / 2, y));
+          const b = [x - w / 2, y - h / 2, x + w / 2, y + h / 2];
+          if (!hit(b)) { box = b; break; }
+        }
+        if (box) break;
+      }
+      if (!box) continue;
+      placed.push(box);
+      ctx.beginPath(); ctx.roundRect(box[0], box[1], w, h, h / 2);
+      ctx.fillStyle = "rgba(14,8,20,.9)"; ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = `hsla(${Mood.sectorHue(G.name)},75%,66%,.65)`; ctx.stroke();
+      ctx.fillStyle = rgba(Mood.colour(pct).map(v => v * 0.35 + 0.65), 1); ctx.fillText(text, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2 + 0.5);
     }
+    cv.dataset.labels = placed.map((b, i) => b.map(Math.round).join(",")).join(";");   // x0,y0,x1,y1; read by browser-check.sh
+    cv.dataset.blobs = drawn.map(d => d.map(v => Math.round(v * 10) / 10).join(",")).join(";");   // x,y,r
+    cv.dataset.canvas = W + "," + innerHeight;
+    cv.dataset.spulse = [...groups.values()].map(G => G.f.toFixed(4)).join(",");   // each organ's halo radius factor
     cv.dataset.cell = `${Math.round(g.cx)},${Math.round(g.cy)},${Math.round(g.R)}`;   // read by browser-check.sh
     cv.dataset.nodes = n;
     cv.dataset.sectors = cellSectors.length;   // read by browser-check.sh: organ count = distinct sectors shown

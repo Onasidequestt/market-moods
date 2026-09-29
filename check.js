@@ -81,11 +81,22 @@ ok(M.sectorRank("Materials") === M.SECTOR_ORDER.length - 1, "Materials organ is 
 ok(M.sectorRank("Something Unheard Of") === M.SECTOR_ORDER.length, "an unknown sector sorts after every known one, never dropped");
 
 // fear gauge: VIX level -> a 0..1 fear factor; calm is inert, high VIX saturates at 1
-near(M.fear(15), 0, "VIX 15 (calm) contributes no fear");
-near(M.fear(35), 1, "VIX 35+ is full fear");
-near(M.fear(25), 0.5, "VIX 25 is half-way to full fear");
+near(M.fear(12), 0, "VIX 12 (calm) contributes no fear");
+near(M.fear(30), 1, "VIX 30+ is full fear");
+near(M.fear(21), 0.5, "VIX 21 is half-way to full fear");
 near(M.fear(5), 0, "fear clamps at the floor, never negative");
 near(M.fear(60), 1, "fear clamps at the ceiling");
+ok(M.fear(16) > 0.2, "a NORMAL day (VIX 16) reads a visible fear (>0.2), not 0.05");
+ok(M.fearWord(11) === "calm" && M.fearWord(16) === "watchful" && M.fearWord(25) === "nervous" && M.fearWord(40) === "fearful", "fear words by VIX band");
+near(M.pulseAmp(0), 0, "no volume: the heartbeat amplitude is exactly 0 (hard still)");
+ok(M.pulseAmp(0.5) >= 0.03 && M.pulseAmp(0.5) <= 0.04, "a normal beat is 3-4% of the radius");
+ok(M.pulseAmp(1) >= 0.05 && M.pulseAmp(0.05) > 0.01, "busy beats harder, even a quiet market still moves > 1%");
+ok(M.volumeWord(0) === "closed" && M.volumeWord(0.2) === "quiet" && M.volumeWord(0.5) === "normal" && M.volumeWord(0.9) === "busy", "volume words");
+{ const s = M.avgSeries([{ prev_close: 100, bars: [[0, 101], [1, 102], [2, 103]] }, { prev_close: 200, bars: [[0, 200], [1, 198]] }]);
+  ok(s.length === 2 && Math.abs(s[0] - 0.5) < 1e-9 && Math.abs(s[1] - 0.5) < 1e-9, "avgSeries: mean move per bar, shortest index sets the length"); }
+const SECS_SHORT_OK = () => M.SECTOR_ORDER.every(x => M.sectorShort(x).length <= 12);
+ok(M.sectorShort("Information Technology") === "Tech" && M.sectorShort("Energy") === "Energy" && SECS_SHORT_OK(), "phone tags are whole words, never a slice");
+ok(M.sectorHue("Energy") !== M.sectorHue("Utilities") && M.sectorHue("Energy") === M.sectorHue("Energy"), "sector identity hues are stable and distinct");
 
 // volume heartbeat: 0..1, relative to the bars' own recent average; shut/no-data market is still
 ok(M.volumeLevel([]) === 0, "no volume readings: the lamp stays still (market shut)");
