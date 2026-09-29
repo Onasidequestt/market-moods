@@ -281,4 +281,24 @@ if bad: print("✘ browser-check sectors: " + "; ".join(bad)); sys.exit(1)
 print(f"✓ browser-check sectors: {m[1]} organs, matches {len(priced_secs)} distinct sectors in the Dow's data")
 EOF
 
+
+# ---- fear gauge (VIX): the page must actually be computing and applying a fear factor (not just
+# carrying the pure mood.js function unused) — data-fear is a live, smoothed reading; a market.json
+# with no "vix" field is an honest 0 (never a faked fever) ----
+shoot 390,844 "http://127.0.0.1:8766/#at=12:10" "$T/fear_ok"
+shoot 390,844 "http://127.0.0.1:8766/.nodata-check/" "$T/fear_no"
+python3 - "$T" <<'EOF' || RC=1
+import json, re, sys
+t = sys.argv[1]
+bad = []
+mk = json.load(open("data/market.json"))
+dom = open(f"{t}/fear_ok.html").read()
+m = re.search(r'data-fear="([\d.]+)"', dom)
+if not m: bad.append("no data-fear reported with market.json present")
+elif "vix" not in mk and float(m[1]) != 0: bad.append(f"no vix in market.json, yet fear={m[1]} (faked fever)")
+elif "vix" in mk and float(m[1]) < 0: bad.append(f"fear={m[1]}, must be >= 0")
+if bad: print("✘ browser-check fear: " + "; ".join(bad)); sys.exit(1)
+print(f"✓ browser-check fear: data-fear={m[1]} ({'vix present' if 'vix' in mk else 'no vix: honest 0'})")
+EOF
+
 exit $RC

@@ -103,7 +103,12 @@
     "Energy", "Utilities", "Real Estate", "Materials"];
   function sectorRank(name) { const i = SECTOR_ORDER.indexOf(name); return i < 0 ? SECTOR_ORDER.length : i; }
 
+  // fear gauge: VIX's LEVEL (not its own daily move) says how nervous the market is. Calm
+  // (<=15) contributes nothing; 35+ is full fear. A pure curve — the page's own slow EMA does
+  // the smoothing, since VIX moves far slower than the blobs (idea #2's own stated risk).
+  const fear = level => clamp((level - 15) / 20, 0, 1);
+
   const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
-                against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER };
+                against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER, fear };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Mood = api;
 })(this);

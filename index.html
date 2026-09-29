@@ -214,6 +214,7 @@
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
+    <dt>Fear</dt><dd>The VIX, the market's own "fear gauge", warms the whole lamp's glow and quickens its bubbling a little on top of each index's own move when it runs high. VIX moves slowly, so this is a subtle, smoothed fever, not a jolt.</dd>
     <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. Companies cluster by sector — tech, energy, health care and the rest — each cluster labelled and coloured by its own average move, so you can see which part of the market is sick or healthy. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
@@ -250,6 +251,10 @@
   let pos = 0, hold = 0, paused = false;
   const lanes = [];            // per index: smoothed values + phases
   let avgPctShown = 0;
+  // fear gauge (VIX): a SLOW EMA of Mood.fear(level) — VIX itself moves far slower than the
+  // blobs (idea #2's own stated risk), so a fast smoothing constant would make it feel like noise
+  // rather than a mood. Stays 0 (no effect, honest empty state) when data.vix is absent.
+  let fearShown = 0;
 
   // ---------- readouts ----------
   function buildReadouts() {
@@ -377,12 +382,12 @@
   const canvas = $("lamp");
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, alpha: false });
   const N = 4 * DROPS;
-  let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat;
+  let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat, uFear;
   if (gl) {
     const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
     const fs = `precision mediump float;
       uniform vec2 uRes; uniform vec3 uBalls[${N}]; uniform vec3 uCols[${N}];
-      uniform vec3 uBgTop; uniform vec3 uBgBot; uniform vec3 uHeat;
+      uniform vec3 uBgTop; uniform vec3 uBgBot; uniform vec3 uHeat; uniform float uFear;
       void main(){
         vec2 q = gl_FragCoord.xy / uRes.y;
         float f = 0.0; vec3 c = vec3(0.0);
@@ -394,7 +399,9 @@
         c /= max(f, 1e-5);
         float y = gl_FragCoord.y / uRes.y;
         vec3 bg = mix(uBgBot, uBgTop, smoothstep(0.0, 1.0, y));
-        bg += uHeat * 0.22 * pow(1.0 - y, 3.0);                 // the lamp's warm floor, tinted by the mood
+        // fear gauge: a nervous VIX widens the lamp's warm floor glow on top of the mood's own
+        // colour — never its own colour (0 fear = exactly the old look, bit-for-bit)
+        bg += uHeat * (0.22 + 0.16 * uFear) * pow(1.0 - y, 3.0);
         float e = 0.035;
         float body = smoothstep(1.0 - e, 1.0 + e, f);
         float glow = smoothstep(0.08, 1.0, f) * (1.0 - body);
@@ -414,6 +421,7 @@
     uRes = gl.getUniformLocation(prog, "uRes"); uBalls = gl.getUniformLocation(prog, "uBalls");
     uCols = gl.getUniformLocation(prog, "uCols"); uBgTop = gl.getUniformLocation(prog, "uBgTop");
     uBgBot = gl.getUniformLocation(prog, "uBgBot"); uHeat = gl.getUniformLocation(prog, "uHeat");
+    uFear = gl.getUniformLocation(prog, "uFear");
   }
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -463,7 +471,7 @@
       L.pct += (pct - L.pct) * k;
       L.h += (Mood.height(pct) - L.h) * k;
       L.sz += (Mood.size(pct) - L.sz) * k;
-      L.sp += (Mood.speed(chop) * (reduced ? 0.4 : 1) - L.sp) * k;
+      L.sp += (Mood.speed(chop) * (reduced ? 0.4 : 1) * (1 + 0.3 * fearShown) - L.sp) * k;
       L.chop = chop; L.rawPct = pct;
       const c = Mood.colour(L.pct);
       for (let j = 0; j < 3; j++) L.col[j] += (c[j] - L.col[j]) * k;
@@ -471,6 +479,10 @@
       sum += pct;
     });
     avgPctShown = sum / data.indexes.length;
+    // VIX moves slowly; a long time constant (~2 minutes to settle) keeps the fever feeling like
+    // a mood, not a jittery reaction to one noisy tick (idea #2's own risk, addressed here).
+    const fearTarget = data.vix ? Mood.fear(data.vix.last) : 0;
+    fearShown += (fearTarget - fearShown) * (1 - Math.exp(-dt * 0.01));
   }
 
   function draw() {
@@ -507,6 +519,8 @@
     gl.uniform3f(uBgTop, 0.035, 0.02, 0.055);
     gl.uniform3f(uBgBot, 0.07, 0.035, 0.08);
     gl.uniform3f(uHeat, heat[0], heat[1], heat[2]);
+    gl.uniform1f(uFear, fearShown);
+    document.body.dataset.fear = fearShown.toFixed(4);   // read by browser-check.sh
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

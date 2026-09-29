@@ -65,8 +65,18 @@ def build():
     for key, name, sym in INDEXES:
         out.append(shape(key, name, sym, get(sym, "5m", "5d"), get(sym, "1d", "1mo")))
         time.sleep(0.5)
-    return {"generated_at": int(time.time()), "source": "Yahoo Finance chart API (delayed)",
-            "indexes": out}
+    # the fear gauge: ^VIX on the same Yahoo source, shaped by the SAME shape() function as the
+    # four indexes (rule 1: reuse, not a parallel parser) — kept as its own top-level field, not a
+    # fifth index, so it never touches the "four indexes" shape the rest of the page/checks assume.
+    vix = None
+    try:
+        vix = shape("vix", "VIX", "^VIX", get("^VIX", "5m", "5d"), get("^VIX", "1d", "1mo"))
+    except Exception as e:
+        print(f"vix fetch failed (non-fatal, the lamp just runs without a fear gauge): {e}", file=sys.stderr)
+    out_d = {"generated_at": int(time.time()), "source": "Yahoo Finance chart API (delayed)",
+             "indexes": out}
+    if vix is not None: out_d["vix"] = vix
+    return out_d
 
 # ---------- companies inside each index blob ----------
 # ponytail: member lists come from free, unofficial sources (Wikipedia / nasdaq.com screener /
@@ -327,7 +337,10 @@ def selfcheck():
     assert norm_sector("Technology") == "Information Technology", norm_sector("Technology")
     assert norm_sector("Finance") == "Financials" and norm_sector("") == "Other", norm_sector("Finance")
     assert norm_sector("Health Care") == "Health Care", "canonical names pass through unchanged"
-    print("✓ fetch selfcheck: 19 asserts")
+    # the fear gauge (VIX) reuses shape() itself, not a parallel parser — same function, key "vix"
+    vs = shape("vix", "VIX", "^VIX", intr, daily)
+    assert vs["key"] == "vix" and vs["last"] == 103.0, vs
+    print("✓ fetch selfcheck: 20 asserts")
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv: selfcheck(); sys.exit(0)

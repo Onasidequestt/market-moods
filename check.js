@@ -80,6 +80,13 @@ ok(M.sectorRank("Information Technology") === 0, "Information Technology organ i
 ok(M.sectorRank("Materials") === M.SECTOR_ORDER.length - 1, "Materials organ is last of the known order");
 ok(M.sectorRank("Something Unheard Of") === M.SECTOR_ORDER.length, "an unknown sector sorts after every known one, never dropped");
 
+// fear gauge: VIX level -> a 0..1 fear factor; calm is inert, high VIX saturates at 1
+near(M.fear(15), 0, "VIX 15 (calm) contributes no fear");
+near(M.fear(35), 1, "VIX 35+ is full fear");
+near(M.fear(25), 0.5, "VIX 25 is half-way to full fear");
+near(M.fear(5), 0, "fear clamps at the floor, never negative");
+near(M.fear(60), 1, "fear clamps at the ceiling");
+
 // the data file the page reads
 const f = path.join(__dirname, "data", "market.json");
 const d = JSON.parse(fs.readFileSync(f, "utf8"));
@@ -91,6 +98,10 @@ for (const i of d.indexes) {
   ok(Math.abs(i.last / i.prev_close - 1) < 0.15, i.key + ": move under 15% (a bad close would show here)");
 }
 ok(new Set(d.indexes.map(i => i.session_date)).size === 1, "all four from the same session");
+// the fear gauge (VIX) is optional in the data file — its absence is an honest empty state (the
+// page runs the lamp with no fear effect), never faked; when present it must be real, priced data
+if (d.vix) ok(d.vix.key === "vix" && d.vix.last > 0 && d.vix.bars.length >= 2, "vix: real, priced data when present");
+else console.log("… data/market.json has no vix field: the fear gauge is off (honest, not faked)");
 // sessions: the past week's real days for replay, oldest first, the last one = the top-level session
 const dates = d.indexes[0].sessions.map(x => x.date);
 ok(dates.length >= 2 && dates.every((x, k) => k === 0 || x > dates[k - 1]), "sessions oldest first: " + dates);
