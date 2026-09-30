@@ -374,8 +374,22 @@ def econ_yahoo(spec, daily, intraday):
     i = pairs(intraday) if intraday else []
     live = bool(i) and i[-1][0] >= d[-1][0]
     lt, last = i[-1] if live else d[-1]
+    prev = d[-2][1]
+    yc = ((intraday or {}).get("meta") or {}).get("previousClose")
+    if yc:
+        # Yahoo's own previous settle for the CURRENT front contract. The daily series splices contracts at each
+        # roll (09-30: Brent's daily row said 102.59 while that day traded 96-99, reading -6.8% for a -0.3% day),
+        # so it is the basis only when this is missing.
+        prev = yc
+    elif len(d) >= 4 and d[-4][1] == d[-3][1] == d[-2][1]:
+        # a thin contract's daily "close" can freeze on a stale settlement (HRC=F sat on 1237 for a week while
+        # it traded 1300+ and read +7%); three identical closes in a row = frozen, so the basis becomes the
+        # last real print before today's daily bar, and with no such print there is no honest move at all
+        before = [c for t, c in i if t < d[-1][0]]
+        if not before: raise ValueError(f"{sym}: daily closes frozen at {prev} and no earlier print")
+        prev = before[-1]
     return {"key": key, "name": name, "sym": sym, "kind": kind, "unit": unit, "freq": "5min" if live else "daily",
-            "src": "Yahoo Finance", "prev": round(d[-2][1], 4), "last": round(last, 4), "last_time": lt,
+            "src": "Yahoo Finance", "prev": round(prev, 4), "last": round(last, 4), "last_time": lt,
             "asof": datetime.fromtimestamp(lt, ET).date().isoformat(),
             "bars": [[t, round(c, 4)] for t, c in i[-24:]] if live else []}
 
@@ -492,6 +506,13 @@ def selfcheck():
     assert (y["prev"], y["last"], y["freq"], y["last_time"]) == (100.0, 105.0, "5min", t0 + 360), y   # newest intraday vs the close before today's bar
     y2 = econ_yahoo(("g", "G", "y", "G=F", "pct", "u", "5min"), daily_e, None)
     assert (y2["prev"], y2["last"], y2["freq"]) == (100.0, 103.0, "daily") and y2["bars"] == [], y2   # thin market: daily only, said so
+    intr_m = dict(intr_e, meta={"previousClose": 104.5})
+    assert econ_yahoo(("g", "G", "y", "G=F", "pct", "u", "5min"), daily_e, intr_m)["prev"] == 104.5   # roll: Yahoo's settle for this contract beats the spliced daily row
+    fz = {"timestamp": [d24 - 3 * 86400, d24 - 2 * 86400, d24, t0], "indicators": {"quote": [{"close": [100.0, 100.0, 100.0, 100.0]}]}}
+    intr_fz = {"timestamp": [d24 + 60, t0 + 60], "indicators": {"quote": [{"close": [107.0, 108.0]}]}}
+    assert econ_yahoo(("g", "G", "y", "G=F", "pct", "u", "5min"), fz, intr_fz)["prev"] == 107.0   # frozen settlement: last real print, not +8%
+    try: econ_yahoo(("g", "G", "y", "G=F", "pct", "u", "5min"), fz, None); assert False
+    except ValueError: pass                                                                       # frozen and nothing else: no move invented
     try: econ_yahoo(("g", "G", "y", "G=F", "pct", "u", "5min"), {"timestamp": [t0], "indicators": {"quote": [{"close": [1.0]}]}}, None); assert False
     except ValueError: pass                                                                       # one close is not a move
     try: econ_fred(("x", "X", "f", "X", "pct", "u", "monthly"), [("2026-08-01", 1.0)]); assert False
