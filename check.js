@@ -168,8 +168,11 @@ for (const key of Object.keys(CELL_FILE)) {
     // replaces it with the regular 5-min bar (14:20): so a company file's LAST bar may be such an
     // in-progress bar, lying inside the index's bar at that slot. The companies refresh every 30 min
     // and the index every 10, so without this the index workflow went red between company runs.
-    if (same) ok(S.t.length <= same.bars.length && S.t.every((t, k) => t === same.bars[k][0] ||
-        (k === S.t.length - 1 && k > 0 && t > same.bars[k - 1][0] && t < same.bars[k][0])), `${key} ${S.date}: company clock = ${key}'s bar times`);
+    // And a past day's 16:00 closing print: Yahoo serves it while that day is today, then drops it from the index's
+    // 5-day series (09-28: company file 79 bars, index 78), which froze both workflows for a day. So the last bar may
+    // also sit PAST the index's last bar, one at most.
+    if (same) ok(S.t.length <= same.bars.length + 1 && S.t.every((t, k) => (k < same.bars.length && t === same.bars[k][0]) ||
+        (k === S.t.length - 1 && k > 0 && t > same.bars[k - 1][0] && (k >= same.bars.length || t < same.bars[k][0]))), `${key} ${S.date}: company clock = ${key}'s bar times`);
   }
   const lastC = co.sessions[co.sessions.length - 1];
   ok(lastC.m.filter(Boolean).length >= CELL_MIN[key], `${key} ${lastC.date}: at least ${CELL_MIN[key]} companies priced (${lastC.m.filter(Boolean).length})`);
