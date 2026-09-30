@@ -161,7 +161,7 @@ for (const key of Object.keys(CELL_FILE)) {
   ok(cdates.every((x, k) => k === 0 || x > cdates[k - 1]), `${key}: company days oldest first: ${cdates}`);
   for (const S of co.sessions) {
     ok(S.m.length === co.companies.length, `${key} ${S.date}: one row per company`);
-    ok(S.m.every(r => r === null || (r.length === S.t.length && r.every(v => Number.isInteger(v) && Math.abs(v) < 5000))), `${key} ${S.date}: rows on the day's clock, whole bp, under 50%`);
+    ok(S.m.every(r => r === null || (r.length === S.t.length && r.every(v => Number.isInteger(v) && Math.abs(v) < 100000))), `${key} ${S.date}: rows on the day's clock, whole bp, under 1000%`);   // a unit bug, not a real move: KOD really did +178% on 09-28 and a 50% cap froze every data run for a day
     const same = ix && ix.sessions.find(x => x.date === S.date);
     // on the index's own clock (today's company file may trail the index by one fetch: a prefix).
     // Mid-session Yahoo's newest bar is stamped with the fetch time (e.g. 14:18:49), and a later fetch
