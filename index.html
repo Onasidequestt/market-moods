@@ -144,7 +144,9 @@
   dialog .src { margin: 14px 0 0; font-size: 12px; color: var(--ink-3); }
   dialog .close { margin-top: 16px; width: 100%; }
 
+  #econBtn { white-space: nowrap; }
   @media (max-width: 640px) {
+    body.incell #econBtn { display: none; }   /* four buttons squeezed the status pill onto the title */
     .readouts { gap: 6px; }
     .idx { padding: 8px 8px 9px; border-radius: 12px; }
     .idx .pct { font-size: 16px; }

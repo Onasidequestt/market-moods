@@ -36,7 +36,7 @@
   .tools { display: flex; gap: 8px; }
   .btn { appearance: none; border: 1px solid var(--line); background: var(--glass); color: var(--ink); text-decoration: none;
     height: 34px; min-width: 34px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer;
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
   .btn:hover { border-color: rgba(244, 236, 247, .32); }
   .btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .btn[hidden] { display: none; }
@@ -71,7 +71,7 @@
   body.incell .members { display: grid; }
   .members li { display: grid; grid-template-columns: 9px 1fr auto; gap: 0 7px; align-items: baseline; font-size: 12.5px; color: var(--ink-2); min-width: 0; }
   .members .chip { width: 9px; height: 9px; border-radius: 50%; align-self: center; }
-  .members .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .members .nm { line-height: 1.2; overflow-wrap: anywhere; }
   .members .mv { font-weight: 600; }
   .members .as { grid-column: 2 / 4; font-size: 11px; color: var(--ink-3); margin-top: -1px; }
   dialog { border: 1px solid var(--line); border-radius: 18px; background: rgba(18, 11, 24, .94); color: var(--ink);
@@ -85,9 +85,9 @@
   dialog .close { margin-top: 16px; width: 100%; }
   @media (max-width: 640px) {
     .readouts { gap: 5px; }
-    .card { padding: 8px 6px 9px; border-radius: 12px; }
+    .card { padding: 8px 5px 9px; border-radius: 12px; }
     .card .pct { font-size: 14px; }
-    .card .name { font-size: 10.5px; gap: 4px; }
+    .card .name { font-size: 10px; gap: 3px; }
     .card .chip { width: 7px; height: 7px; }
     .card .lvl { font-size: 9.5px; }
     .card .look { display: none; }
@@ -429,6 +429,11 @@
       drawn.push([N.dx, N.dy, N.r]);
     }
     ctx.fillStyle = "rgba(20,11,24,.9)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const N of list) if (N.r >= 12 && N.r < 24) {   // too small for name + move: the name alone, so no blob is left blank
+      ctx.font = `600 9px ui-sans-serif, -apple-system, sans-serif`;
+      let t = N.m.short || N.m.name; while (t.length > 3 && ctx.measureText(t).width > N.r * 1.9) t = t.slice(0, -1);
+      ctx.fillText(t, N.dx, N.dy);
+    }
     for (const N of list) if (N.r >= 24) {
       const nm = N.m.short || N.m.name;
       const fs = Math.max(9, Math.min(14, Math.round(N.r * 0.34))), asof = Mood.econAsOf(N.m, now);
@@ -448,7 +453,12 @@
     const g = grp(); if (!inCell || !g) return;
     const now = Date.now();
     $("cellWord").textContent = "Inside " + g.name.toLowerCase();
-    $("cellSub").textContent = `${g.name} ${fmtPct(g.pct)} · ${g.members.filter(m => m.mv.pct > 0).length} of ${g.members.length} rising · ${groupWhenLabel(g, now)}`;
+    const up = g.members.filter(m => m.mv.pct > 0).length, n = g.members.length;
+    // when the group's sign disagrees with most of its members, one big mover is doing it: name it, so a red ring
+    // over mostly-green blobs reads as "Cotton pulled it down", not as a broken page
+    const against = (g.pct < 0 && up > n / 2) || (g.pct > 0 && up < n / 2);
+    const drv = against ? g.members.slice().sort((a, b) => (g.pct < 0 ? a.mv.pct - b.mv.pct : b.mv.pct - a.mv.pct))[0] : null;
+    $("cellSub").textContent = `${g.name} ${fmtPct(g.pct)} · ${up} of ${n} rising` + (drv ? ` · ${drv.short || drv.name} ${drv.mv.text} pulls it ${g.pct < 0 ? "down" : "up"}` : "") + ` · ${groupWhenLabel(g, now)}`;
     const ul = $("members"), sig = g.key + "|" + g.members.map(m => m.key + m.mv.text + Mood.econAsOf(m, now).label).join("|");
     if (ul.dataset.sig !== sig) { ul.dataset.sig = sig; ul.textContent = "";
     for (const m of g.members) {
@@ -500,7 +510,7 @@
     const st = fast.map(m => Mood.econAsOf(m, now)), newest = fast.reduce((a, m) => Math.max(a, m.last_time), 0);
     const clock = new Date(newest * 1000).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }) + " ET";
     if (!fast.length) setStatus("replay", "Slow numbers only · see each date");
-    else if (st.some(s => s.live)) setStatus("live", `Delayed · as of ${clock}`);
+    else if (st.some(s => s.live)) setStatus("live", st.every(s => s.live) ? `Delayed · as of ${clock}` : `Delayed · some closed · ${clock}`);
     else setStatus("replay", `Closed · prices as of ${clock}`);
     document.body.dataset.pill = $("statusText").textContent;
     cellUi();

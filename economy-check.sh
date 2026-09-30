@@ -70,6 +70,12 @@ for (const SIZE of ["390,844", "1440,900"]) {
       if (m && M.econSlow(m)) ok(/^(weekly|monthly) · /.test(lab) && !/delayed/.test(lab), `${tag} ${K}/${key}: a slow number shows its own date, never delayed (${lab})`);
       else ok(/^(delayed|closed) · /.test(lab), `${tag} ${K}/${key}: a price says delayed or closed, with the time (${lab})`);
     }
+    const sub = dec(attr(H, /id="cellSub"[^>]*>([^<]*)</) || ""), gp = groupPct(g);
+    const mvs = g.members.map(m => ({ m, mv: M.econMove(m.kind, m.prev, m.last) })), up = mvs.filter(x => x.mv.pct > 0).length;
+    const against = (gp < 0 && up > g.members.length / 2) || (gp > 0 && up < g.members.length / 2);
+    const drv = against ? mvs.slice().sort((a, b) => gp < 0 ? a.mv.pct - b.mv.pct : b.mv.pct - a.mv.pct)[0] : null;
+    ok(drv ? sub.includes(`${drv.m.short || drv.m.name} ${drv.mv.text} pulls it ${gp < 0 ? "down" : "up"}`) : !/pulls it/.test(sub),
+       `${tag} ${K}: subtitle names the member pulling the group against most of its members, recounted (${sub})`);
     const note = dec(attr(H, /<div class="notice on" id="notice">([^<]*)</) || "");   // the on-page note, not the help dialog's copy
     for (const x of e.missing.filter(z => z.group === K)) ok(note.includes(x.name) && note.includes(x.why), `${tag} ${K}: not-live ${x.name} is named on the page with its reason`);
   }

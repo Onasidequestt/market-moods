@@ -196,6 +196,7 @@ const FRESH = process.argv.includes("--fresh");   // economy.yml only: also fail
 near(M.econMove("pct", 100, 98.5).pct, -1.5, "econ pct: percent change of the level");
 near(M.econMove("bp", 5.00, 5.06).raw, 6, "econ bp: a rate's change in basis points");
 near(M.econMove("bp", 5.00, 5.10).pct, 1, "econ bp: 10 bp counts as 1%");
+ok(M.econMove("bp", 5.068, 5.063).text === "0 bp", "econ bp: a move that rounds to 0 reads 0 bp, never -0 bp");
 near(M.econMove("pt", 4.1, 4.2).pct, 1, "econ pt: 0.1 point counts as 1%");
 near(M.econMove("jobs", 100000, 100150).pct, 1, "econ jobs: 150k jobs counts as 1%");
 ok(M.econMove("pct", 0, 5) === null && M.econMove("bp", NaN, 5) === null && M.econMove("nope", 1, 2) === null, "econ: no move rather than a made-up one");

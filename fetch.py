@@ -348,7 +348,7 @@ ECON = [
         ("spending", "Consumer spending (PCE)", "f", "PCE", "pct", "$ billion / year", "monthly")]),
 ]
 # things Clark asked for that no free keyless source carries: listed on the page, never faked
-ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemployment", "payrolls": "Payrolls", "claims": "Claims",
+ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls": "Payrolls", "claims": "Claims",
               "sentiment": "Sentiment", "retail": "Retail", "spending": "Spending", "t3m": "3-month", "t5y": "5-year",
               "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
               "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI"}     # a blob's label; the full name rides in the tooltip

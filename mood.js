@@ -163,7 +163,7 @@
   // Colour follows the DIRECTION of the number, not whether it is good news (rising unemployment is
   // green-up here, like rising oil); the page's help says so.
   const MINUS = "\u2212";
-  const signed = (v, digits, unit) => (v > 0 ? "+" : v < 0 ? MINUS : "") + Math.abs(v).toFixed(digits) + unit;
+  const signed = (v, digits, unit) => { const r = +v.toFixed(digits); return (r > 0 ? "+" : r < 0 ? MINUS : "") + Math.abs(r).toFixed(digits) + unit; };   // -0.3 bp rounds to "0 bp", never "-0 bp"
   function econMove(kind, prev, last) {
     if (!(isFinite(prev) && isFinite(last))) return null;
     if (kind === "pct") { if (!(prev > 0)) return null; const d = (last / prev - 1) * 100; return { raw: d, pct: d, text: signed(d, 2, "%") }; }
