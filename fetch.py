@@ -332,11 +332,12 @@ ECON = [
         ("cotton", "Cotton", "y", "CT=F", "pct", "cents / lb", "5min"),
         ("coffee", "Coffee", "y", "KC=F", "pct", "cents / lb", "5min"),
         ("sugar", "Sugar", "y", "SB=F", "pct", "cents / lb", "5min")]),
-    ("rates", "Treasury rates", "Rates", [
+    ("rates", "Rates & the dollar", "Rates", [
         ("t3m", "3-month bill", "y", "^IRX", "bp", "% yield", "5min"),
         ("t5y", "5-year note", "y", "^FVX", "bp", "% yield", "5min"),
         ("t10y", "10-year note", "y", "^TNX", "bp", "% yield", "5min"),
-        ("t30y", "30-year bond", "y", "^TYX", "bp", "% yield", "5min")]),
+        ("t30y", "30-year bond", "y", "^TYX", "bp", "% yield", "5min"),
+        ("dollar", "US dollar index", "y", "DX-Y.NYB", "pct", "index vs 6 currencies", "5min")]),
     ("macro", "The economy", "Economy", [
         ("mortgage", "30-year mortgage rate", "f", "MORTGAGE30US", "bp", "% rate", "weekly"),
         ("cpi", "Consumer prices (CPI)", "f", "CPIAUCSL", "pct", "index", "monthly"),
@@ -345,11 +346,12 @@ ECON = [
         ("claims", "Jobless claims", "f", "ICSA", "pct", "claims / week", "weekly"),
         ("sentiment", "Consumer sentiment", "f", "UMCSENT", "pct", "index", "monthly"),
         ("retail", "Retail sales", "f", "RSAFS", "pct", "$ million / month", "monthly"),
-        ("spending", "Consumer spending (PCE)", "f", "PCE", "pct", "$ billion / year", "monthly")]),
+        ("spending", "Consumer spending (PCE)", "f", "PCE", "pct", "$ billion / year", "monthly"),
+        ("homes", "Home values (Case-Shiller)", "f", "CSUSHPINSA", "pct", "index", "monthly")]),
 ]
 # things Clark asked for that no free keyless source carries: listed on the page, never faked
 ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls": "Payrolls", "claims": "Claims",
-              "sentiment": "Sentiment", "retail": "Retail", "spending": "Spending", "t3m": "3-month", "t5y": "5-year",
+              "sentiment": "Sentiment", "retail": "Retail", "spending": "Spending", "homes": "Homes", "dollar": "Dollar", "t3m": "3-month", "t5y": "5-year",
               "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
               "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI"}     # a blob's label; the full name rides in the tooltip
 ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)")]
