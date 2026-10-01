@@ -65,6 +65,7 @@
   .mood .key { margin: 6px auto 0; padding: 0 16px; font-size: 12px; color: var(--ink-3); max-width: 560px; }
   .tags { position: fixed; inset: 0; pointer-events: none; }
   .tags span.door { pointer-events: auto; cursor: pointer; }
+  .tags span.econ { font-size: 10px; opacity: .8; }
   .cellcap { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; display: none; }
   body.incell .cellcap { display: block; }
   .cellcap .word { font-size: clamp(30px, 5.4vw, 58px); font-weight: 200; letter-spacing: -.02em; line-height: 1.05;
@@ -232,6 +233,7 @@
     <dt>Colour</dt><dd>Today's move from yesterday's close. Red is falling, amber is flat, green is rising.</dd>
     <dt>Height</dt><dd>Rising indexes float up; falling ones sink. The top and bottom of the lamp are a 1% move.</dd>
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
+    <dt>Economy</dt><dd>The smaller blobs on the right are the economy's groups: energy, metals, farm goods, Treasury rates and the slow numbers. Same colour, height and size rules; each shows its latest move (they do not replay the day). Tap one, or its name, to see its members.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
     <dt>Fear</dt><dd id="helpFear">The VIX, the market's own fear gauge.</dd>
@@ -272,6 +274,30 @@
   let data = null, mode = "none", stale = false, days = [], curDay = null;
   let pos = 0, hold = 0, paused = false;
   const lanes = [];            // per index: smoothed values + phases
+  // economy groups (data/economy.json) ride beside the indexes as smaller blobs; their move is the same
+  // Mood.econGroupPct average economy.html shows, and a tap opens that group's inside view there.
+  // They have no intraday replay: a group shows its latest move whatever the timeline is doing.
+  const econ = [];
+  async function loadEcon() {
+    try {
+      const r = await fetch("data/economy.json?t=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      const gs = (d.groups || []).filter(g => g.members && g.members.length).map(g => {
+        const ms = g.members.map(m => ({ m, move: Mood.econMove(m.kind, m.prev, m.last) })).filter(x => x.move);
+        const fc = ms.filter(x => !Mood.econSlow(x.m)).map(x => Mood.econChop(x.m)).filter(c => c != null);
+        return { key: g.key, name: g.name, pct: Mood.econGroupPct(ms), chop: fc.length ? fc.reduce((a, b) => a + b, 0) / fc.length : null };
+      }).filter(g => g.pct != null).slice(0, ECON_MAX);
+      gs.forEach((g, i) => {
+        const L = econ.find(e => e.key === g.key);
+        if (L) Object.assign(L, { name: g.name, target: g.pct, chop: g.chop });
+        else econ.push({ key: g.key, name: g.name, target: g.pct, chop: g.chop, pct: g.pct, h: Mood.height(g.pct), sz: Mood.size(g.pct),
+                         sp: 1, ph: 40 + i * 10, col: Mood.colour(g.pct), drops: makeDrops() });
+      });
+      for (let i = econ.length - 1; i >= 0; i--) if (!gs.some(g => g.key === econ[i].key)) econ.splice(i, 1);
+      document.body.dataset.econ = econ.map(e => e.key + ":" + e.target.toFixed(2)).join(",");   // read by browser-check.sh
+    } catch (e) { console.warn("market-moods economy:", e.message); }   // no economy file = the four indexes alone (honest)
+  }
   let avgPctShown = 0;
   // fear gauge (VIX): a SLOW EMA of Mood.fear(level) — VIX itself moves far slower than the
   // blobs (idea #2's own stated risk), so a fast smoothing constant would make it feel like noise
@@ -333,6 +359,7 @@
       if (mode === "live") pos = lastPos();
       buildDays();
       if (firstLoad) initLanes();
+      await loadEcon();
       $("notice").classList.remove("on");
       $("timeline").hidden = mode !== "replay";
       $("days").hidden = mode !== "replay" || days.length < 2;   // before the first draw: it measures the footer
@@ -396,15 +423,18 @@
     lanes.length = 0;
     data.indexes.forEach((ix, i) => {
       const p0 = (Mood.priceAt(ix.bars, pos) / ix.prev_close - 1) * 100;
-      const drops = [];
-      for (let k = 0; k < DROPS; k++) {
-        const s = k * 2.71;                 // same drop shapes in every lane: only the data may make them differ
-        drops.push({ ax: 0.6 + 0.4 * frac(s * 1.3), wx: 0.23 + 0.31 * frac(s * 2.1), px: frac(s * 3.7) * 6.28,
-                     ay: 0.7 + 0.5 * frac(s * 4.3), wy: 0.11 + 0.19 * frac(s * 5.9), py: frac(s * 6.1) * 6.28,
-                     rr: k === 0 ? 1 : 0.5 + 0.25 * frac(s * 7.7) });
-      }
-      lanes.push({ pct: p0, h: Mood.height(p0), sz: Mood.size(p0), sp: 1, ph: i * 10, col: Mood.colour(p0), drops });
+      lanes.push({ pct: p0, h: Mood.height(p0), sz: Mood.size(p0), sp: 1, ph: i * 10, col: Mood.colour(p0), drops: makeDrops() });
     });
+  }
+  function makeDrops() {
+    const drops = [];
+    for (let k = 0; k < DROPS; k++) {
+      const s = k * 2.71;                 // same drop shapes in every lane: only the data may make them differ
+      drops.push({ ax: 0.6 + 0.4 * frac(s * 1.3), wx: 0.23 + 0.31 * frac(s * 2.1), px: frac(s * 3.7) * 6.28,
+                   ay: 0.7 + 0.5 * frac(s * 4.3), wy: 0.11 + 0.19 * frac(s * 5.9), py: frac(s * 6.1) * 6.28,
+                   rr: k === 0 ? 1 : 0.5 + 0.25 * frac(s * 7.7) });
+    }
+    return drops;
   }
   const clampN = (v, a, b) => Math.min(b, Math.max(a, v));
   function frac(x) { x = Math.sin(x * 12.9898) * 43758.5453; return x - Math.floor(x); }
@@ -412,7 +442,8 @@
   // ---------- WebGL lamp ----------
   const canvas = $("lamp");
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, alpha: false });
-  const N = 4 * DROPS;
+  const ECON_MAX = 6;                           // economy group blobs beside the four indexes (mm19)
+  const N = (4 + ECON_MAX) * DROPS;
   let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat, uFear;
   if (gl) {
     const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -509,7 +540,13 @@
       L.ph += dt * L.sp;
       sum += pct;
     });
-    avgPctShown = sum / data.indexes.length;
+    avgPctShown = sum / data.indexes.length;   // the mood stays the four indexes' own
+    for (const L of econ) {
+      L.pct += (L.target - L.pct) * k; L.h += (Mood.height(L.target) - L.h) * k; L.sz += (Mood.size(L.target) - L.sz) * k;
+      L.sp += (Mood.speed(L.chop) * (reduced ? 0.4 : 1) - L.sp) * k;
+      const c = Mood.colour(L.pct); for (let j = 0; j < 3; j++) L.col[j] += (c[j] - L.col[j]) * k;
+      L.ph += dt * L.sp;
+    }
     // VIX barely moves inside a session, so its target is close to constant; a ~7 s time constant
     // (settled in ~20 s) eases the fever in without a jolt. The first frame snaps: there is no
     // earlier reading to smooth from. (The old ~100 s constant plus a 15..35 range left it at 0.02
@@ -536,12 +573,15 @@
 
   function draw() {
     const W = canvas.width, H = canvas.height, aspect = W / H;
-    const laneW = aspect / 4;
+    // index lanes are full width, economy lanes 0.6 of one (smaller blobs): together they share the screen
+    // a half-lane gap between the two families keeps their wax fields from fusing into one glob
+    const EW = 0.6, GAP = econ.length ? 0.5 : 0, laneW = aspect / (4 + GAP + EW * econ.length);
     const baseR = Math.min(laneW * 0.34, 0.095) * pulseNow;   // the heartbeat: exactly 1 when pulseAmp is 0
     const band = travel(baseR * 1.4 * 1.25);   // biggest blob (size 1.4) with its droplets bunched: body edge at (Σr⁴)^¼ ≈ 1.23 R
     let n = 0;
-    lanes.forEach((L, i) => {
-      const cx = (i + 0.5) * laneW;
+    lanes.concat(econ).forEach((L, i) => {
+      const isE = i >= 4, w = isE ? laneW * EW : laneW;
+      const cx = isE ? (4 + GAP) * laneW + (i - 4 + 0.5) * w : (i + 0.5) * laneW;
       let low = Infinity;
       const cy = band[0] + L.h * (band[1] - band[0]);
       const amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
@@ -551,17 +591,18 @@
         // they break away and rejoin. A steady index stays whole, a choppy one comes apart.
         const brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));   // break-away clock shared: equal chop, equal spread
-        const R = baseR * L.sz;             // offsets scale with the blob, so phone and desktop look alike
-        const r = R * d.rr, room = Math.max(0, laneW * 0.5 - r);   // wax stays in its own lane and band
-        const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
+        const R = isE ? Math.min(baseR * L.sz * EW, w * 0.3) : baseR * L.sz;   // an economy blob never outgrows its narrow lane   // offsets scale with the blob, so phone and desktop look alike
+        const r = R * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
+        const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? w * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
         const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, band[0], band[1]);
-        balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = baseR * L.sz * d.rr;
-        low = Math.min(low, y - baseR * L.sz * d.rr * 1.1);
+        balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
+        low = Math.min(low, y - r * 1.1);
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
       });
       L.tagX = cx / aspect; L.tagY = low - 0.035;   // the label sits under the blob's lowest droplet
     });
+    for (; n < N; n++) balls[n * 3 + 2] = 0;   // unused slots: radius 0 adds nothing to the field
     const heat = Mood.colour(avgPctShown);
     gl.uniform2f(uRes, W, H);
     gl.uniform3fv(uBalls, balls); gl.uniform3fv(uCols, cols);
@@ -592,15 +633,18 @@
       ix.el.querySelector(".chop").textContent = L.chop == null ? "just opened" : Mood.chopWord(L.chop) + " last hour";
     });
     const tags = $("tags");
-    if (tags.children.length !== data.indexes.length) {
+    if (tags.children.length !== data.indexes.length + econ.length) {
       tags.textContent = "";
       data.indexes.forEach(ix => { const s = document.createElement("span"); s.textContent = SHORT[ix.key] || ix.name;
         if (CELL_KEYS.includes(ix.key)) { if (canOpen(ix.key)) { s.className = "door"; s.title = "Look inside"; }
           s.onclick = e => { if (openCell(ix.key)) e.stopPropagation(); }; }
         tags.appendChild(s); });
+      econ.forEach(g => { const a = document.createElement("span"); a.textContent = g.name; a.className = "door econ";
+        a.title = "Look inside " + g.name; a.onclick = () => { location.href = "economy.html#g=" + g.key; }; tags.appendChild(a); });
     }
-    lanes.forEach((L, i) => { if (L.tagX == null) return; const s = tags.children[i];
-      s.style.left = (L.tagX * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%";
+    lanes.concat(econ).forEach((L, i) => { if (L.tagX == null) return; const s = tags.children[i];
+      const half = s.offsetWidth / 2 / innerWidth;   // a label never runs off either edge of the screen
+      s.style.left = (clampN(L.tagX, half + 0.01, 1 - half - 0.01) * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%";
       s.style.visibility = "visible"; });
     $("moodWord").textContent = Mood.moodWord(avgPctShown);
     $("moodWord").style.color = hex(Mood.colour(avgPctShown).map(v => v * 0.35 + 0.65));
@@ -1078,7 +1122,10 @@
       const b = i * DROPS * 3;
       return Math.hypot(e.clientX - balls[b] * H, e.clientY - (H - balls[b + 1] * H)) < balls[b + 2] * H * 1.5;
     });
+    const eHit = !hit && econ.find((g, j) => { const b = (4 + j) * DROPS * 3;
+      return balls[b + 2] > 0 && Math.hypot(e.clientX - balls[b] * H, e.clientY - (H - balls[b + 1] * H)) < balls[b + 2] * H * 1.5; });
     if (hit) openCell(hit.key);
+    else if (eHit) location.href = "economy.html#g=" + eHit.key;
     else document.body.classList.toggle("bare");
   });
   $("chrome").addEventListener("click", e => { if (e.target === $("chrome")) document.body.classList.toggle("bare"); });
