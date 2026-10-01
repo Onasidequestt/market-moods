@@ -170,10 +170,13 @@
     if (kind === "bp") { const d = (last - prev) * 100; return { raw: d, pct: d / 10, text: signed(d, 0, " bp") }; }
     if (kind === "pt") { const d = last - prev; return { raw: d, pct: d * 10, text: signed(d, 1, " pt") }; }
     if (kind === "jobs") { const d = last - prev; return { raw: d, pct: d / 150, text: signed(d, 0, "k jobs") }; }
+    // ponytail: a $5 bn swing counts as 1% (a scale like payrolls' 150k); the trade balance is negative, so a
+    // percent change would flip its meaning. Input in $ million (FRED BOPGSTB). Upgrade: scale by its own spread.
+    if (kind === "bn") { const d = (last - prev) / 1000; return { raw: d, pct: d / 5, text: (d > 0 ? "+$" : d < 0 ? MINUS + "$" : "$") + Math.abs(+d.toFixed(1)).toFixed(1) + " bn" }; }
     return null;
   }
   // slow = a weekly or monthly release: no last hour to be choppy in, and it never moves between releases
-  const econSlow = m => m.freq === "weekly" || m.freq === "monthly";
+  const econSlow = m => m.freq === "weekly" || m.freq === "monthly" || m.freq === "quarterly" || m.freq === "yearly";
   // the last hour's choppiness of a market-traded member, in the same units as its move (so a yield
   // and an oil future are judged by the same rule): the spread of bar-to-bar moves of its
   // percent-equivalent path over the last ~hour of prints. null when fewer than 4 prints fall in that
@@ -199,6 +202,8 @@
     const tz = { timeZone: "America/New_York" }, d = new Date(m.asof + "T12:00:00Z");
     const day = (o) => d.toLocaleDateString("en-US", Object.assign({ timeZone: "UTC" }, o));
     if (m.freq === "monthly") return { slow: true, live: false, label: "monthly \u00b7 " + day({ month: "short", year: "numeric" }) };
+    if (m.freq === "quarterly") return { slow: true, live: false, label: "quarterly \u00b7 Q" + (Math.floor(+m.asof.slice(5, 7) / 3) + 1) + " " + m.asof.slice(0, 4) };
+    if (m.freq === "yearly") return { slow: true, live: false, label: "yearly \u00b7 " + m.asof.slice(0, 4) };
     if (m.freq === "weekly") return { slow: true, live: false, label: "weekly \u00b7 " + day({ month: "short", day: "numeric" }) };
     if (m.freq === "daily") return { slow: false, live: false, label: "daily close \u00b7 " + day({ month: "short", day: "numeric" }) };
     const age = (nowMs / 1000 - m.last_time) / 60, t = new Date(m.last_time * 1000);

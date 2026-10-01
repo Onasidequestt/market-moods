@@ -204,6 +204,10 @@ near(M.econMove("pt", 4.1, 4.2).pct, 1, "econ pt: 0.1 point counts as 1%");
 near(M.econMove("jobs", 100000, 100150).pct, 1, "econ jobs: 150k jobs counts as 1%");
 ok(M.econMove("pct", 0, 5) === null && M.econMove("bp", NaN, 5) === null && M.econMove("nope", 1, 2) === null, "econ: no move rather than a made-up one");
 ok(M.econMove("bp", 5, 5.06).text === "+6 bp" && M.econMove("pct", 100, 98.5).text === "−1.50%" && M.econMove("jobs", 1, 163).text === "+162k jobs", "econ: the words say the unit");
+near(M.econMove("bn", -88576, -78576).pct, 2, "econ bn: a $10 bn narrower trade gap counts as +2%");
+ok(M.econMove("bn", -88576, -98576).text === "−$10.0 bn" && M.econMove("bn", 1, 1).text === "$0.0 bn", "econ bn: the words say dollars, sign first, no -0");
+ok(M.econSlow({ freq: "quarterly" }) && M.econSlow({ freq: "yearly" }), "econ: quarterly and yearly are slow");
+ok(M.econAsOf({ freq: "quarterly", asof: "2026-04-01" }, 0).label === "quarterly · Q2 2026" && M.econAsOf({ freq: "yearly", asof: "2025-01-01" }, 0).label === "yearly · 2025", "econ time: quarterly names its quarter, yearly its year");
 ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econSlow({ freq: "5min" }) && !M.econSlow({ freq: "daily" }), "econ: weekly and monthly are slow");
 { // a group of market prices averages only the prices; slow numbers only enter a group made of nothing else
   const mv = (freq, pct) => ({ m: { freq }, move: { pct } });
@@ -235,19 +239,21 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
   if (!fs.existsSync(ef)) console.log("… data/economy.json missing: the economy page shows its honest 'couldn't load' notice");
   else {
     const e = JSON.parse(fs.readFileSync(ef, "utf8")), today = Date.now() / 1000, day = 86400;
-    ok(e.groups.map(g => g.key).join() === "energy,metals,farm,rates,macro", "economy: the five groups, in order: " + e.groups.map(g => g.key));
+    ok(e.groups.map(g => g.key).join() === "energy,metals,farm,rates,macro,debt,shipping", "economy: the seven groups, in order: " + e.groups.map(g => g.key));
     const seen = new Set(), all = [];
     for (const g of e.groups) {
       ok(g.members.length >= 3, `${g.key}: at least 3 members live (${g.members.length})`);
       for (const m of g.members) {
         ok(!seen.has(m.key), `${m.key}: not in two groups`); seen.add(m.key); all.push(m);
-        ok(["pct", "bp", "pt", "jobs"].includes(m.kind) && ["5min", "daily", "weekly", "monthly"].includes(m.freq), `${m.key}: known kind and rhythm`);
+        ok(["pct", "bp", "pt", "jobs", "bn"].includes(m.kind) && ["5min", "daily", "weekly", "monthly", "quarterly", "yearly"].includes(m.freq), `${m.key}: known kind and rhythm`);
         ok(Number.isFinite(m.prev) && Number.isFinite(m.last) && m.name && m.unit && m.src && m.short, `${m.key}: real numbers, named, with unit and source`);
         const mv = M.econMove(m.kind, m.prev, m.last);
         ok(mv && Math.abs(mv.pct) < 30, `${m.key}: a move exists and is under 30% (${mv && mv.text}): a bigger one is a parse bug, not news`);
         ok(/^\d{4}-\d{2}-\d{2}$/.test(m.asof), `${m.key}: dated`);
         const age = (today - Date.parse(m.asof + "T12:00:00Z") / 1000) / day;
-        const limit = { "5min": 10, daily: 10, weekly: 21, monthly: 100 }[m.freq];
+        // quarterly is dated by its quarter's first day and lands ~3 months after it ends; yearly (IMF WEO) is the last
+        // full year, so 2025-01-01 stays the newest until the April 2027 WEO: ~820 days at worst
+        const limit = { "5min": 10, daily: 10, weekly: 21, monthly: 100, quarterly: 300, yearly: 850 }[m.freq];
         // staleness is only a failure where the economy file is what is being refreshed (economy.yml passes
         // --fresh); in the index and companies workflows an old economy file must not block stock data
         if (FRESH) ok(age >= -1 && age <= limit, `${m.key}: ${m.freq} number dated ${m.asof} is ${age.toFixed(0)} days old, limit ${limit}`);

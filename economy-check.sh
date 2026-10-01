@@ -29,6 +29,7 @@ for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8768/economy.html" "$T/lamp_$SIZE"
   shoot $SIZE "http://127.0.0.1:8768/.econ-nodata-check/economy.html" "$T/no_$SIZE"
   for K in $KEYS; do shoot $SIZE "http://127.0.0.1:8768/economy.html#g=$K" "$T/g_${K}_$SIZE"; done
+  shoot $SIZE "http://127.0.0.1:8768/index.html" "$T/front_$SIZE"   # mm19: the groups ride on the front page too
 done
 mkdir -p shots/economy; for K in $KEYS; do cp "$T/g_${K}_390,844.png" "shots/economy/${K}_phone.png"; done
 cp "$T/lamp_390,844.png" shots/economy/lamp_phone.png; cp "$T/lamp_1440,900.png" shots/economy/lamp_desktop.png
@@ -46,17 +47,17 @@ const groupPct = g => M.econGroupPct(g.members.map(m => ({ m, move: M.econMove(m
 const fmt = p => (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(2) + "%";
 for (const SIZE of ["390,844", "1440,900"]) {
   const L = dom("lamp_" + SIZE), tag = SIZE.startsWith("390") ? "phone" : "desktop";
-  ok(/data-drops="25"/.test(L), `${tag}: 5 blobs x 5 drops of wax drawn (${attr(L, /data-drops="(\d+)"/)})`);
+  ok(attr(L, /data-drops="(\d+)"/) == e.groups.length * 5, `${tag}: ${e.groups.length} blobs x 5 drops of wax drawn (${attr(L, /data-drops="(\d+)"/)})`);
   ok(/data-pill="(Delayed|Closed) /.test(L), `${tag}: the pill says delayed or closed (${attr(L, /data-pill="([^"]*)"/)})`);
   const cards = [...L.matchAll(/<button[^>]*class="card" data-g="(\w+)"[\s\S]*?<div class="pct num"[^>]*>([^<]*)<\/div><div class="lvl">([^<]*)<\/div>/g)];
   ok(cards.length === e.groups.length, `${tag}: one card per group (${cards.length})`);
   for (const [, k, pct, when] of cards) {
     const g = e.groups.find(x => x.key === k);
     ok(g && pct === fmt(groupPct(g)), `${tag}: ${k} card ${pct} = recount ${g && fmt(groupPct(g))}`);
-    if (k === "macro") ok(/^monthly · \w{3} \d{4}$/.test(when), `${tag}: the economy card shows its month, not "delayed" (${when})`);
+    if (g && g.members.every(M.econSlow)) ok(/^monthly · \w{3} \d{4}$/.test(when), `${tag}: the ${k} card (slow numbers only) shows its month, not "delayed" (${when})`);
     else ok(/^(delayed|closed)$/.test(when), `${tag}: ${k} card says delayed or closed (${when})`);
   }
-  ok(/class="tags"[^>]*>(<span[^>]*>[^<]+<\/span>){5}/.test(L), `${tag}: five labels under the blobs`);
+  ok(new RegExp(`class="tags"[^>]*>(<span[^>]*>[^<]+<\\/span>){${e.groups.length}}`).test(L), `${tag}: one label per blob (${e.groups.length})`);
   for (const K of keys) {
     const g = e.groups.find(x => x.key === K), H = dom(`g_${K}_${SIZE}`);
     ok(/<body class="incell"/.test(H), `${tag} ${K}: inside view is open`);
@@ -67,8 +68,8 @@ for (const SIZE of ["390,844", "1440,900"]) {
       const m = g.members.find(x => x.key === key), t = text(inner).map(dec);
       ok(m && t.includes(M.econMove(m.kind, m.prev, m.last).text), `${tag} ${K}/${key}: move text recounted (${t.join(" | ")})`);
       const lab = t[t.length - 1];
-      if (m && M.econSlow(m)) ok(/^(weekly|monthly) · /.test(lab) && !/delayed/.test(lab), `${tag} ${K}/${key}: a slow number shows its own date, never delayed (${lab})`);
-      else ok(/^(delayed|closed) · /.test(lab), `${tag} ${K}/${key}: a price says delayed or closed, with the time (${lab})`);
+      if (m && M.econSlow(m)) ok(/^(weekly|monthly|quarterly|yearly) · /.test(lab) && !/delayed/.test(lab), `${tag} ${K}/${key}: a slow number shows its own date, never delayed (${lab})`);
+      else ok(/^(delayed|closed) · /.test(lab) || (m && m.freq === "daily" && /^daily close · /.test(lab)), `${tag} ${K}/${key}: a price says delayed or closed with the time, or names its daily close (${lab})`);
     }
     const sub = dec(attr(H, /id="cellSub"[^>]*>([^<]*)</) || ""), gp = groupPct(g);
     const mvs = g.members.map(m => ({ m, mv: M.econMove(m.kind, m.prev, m.last) })), up = mvs.filter(x => x.mv.pct > 0).length;
@@ -79,6 +80,12 @@ for (const SIZE of ["390,844", "1440,900"]) {
     const note = dec(attr(H, /<div class="notice on" id="notice">([^<]*)</) || "");   // the on-page note, not the help dialog's copy
     for (const x of e.missing.filter(z => z.group === K)) ok(note.includes(x.name) && note.includes(x.why), `${tag} ${K}: not-live ${x.name} is named on the page with its reason`);
   }
+  // mm19: the front page carries every group as a blob, its move recounted here, and a label that opens it
+  const F = dom("front_" + SIZE), fe = attr(F, /data-econ="([^"]*)"/) || "";
+  const want = e.groups.map(g => [g.key, groupPct(g)]).filter(([, p]) => p != null);
+  ok(fe === want.map(([k, p]) => k + ":" + p.toFixed(2)).join(","), `${tag} front: one economy blob per group, moves recounted (${fe})`);
+  const doors = [...F.matchAll(/<span class="door econ" title="Look inside ([^"]+)"/g)].map(x => dec(x[1]));
+  ok(doors.join() === e.groups.map(g => g.name).join(), `${tag} front: a label per group that opens it (${doors.join(" | ")})`);
   const N = dom("no_" + SIZE);
   ok(/Couldn.t load the economy data/.test(N), `${tag}: no data file gives the honest notice`);
   ok(!/class="card"/.test(N) && !/data-drops=/.test(N), `${tag}: no data file draws no cards and no wax`);

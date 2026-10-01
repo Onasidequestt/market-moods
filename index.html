@@ -233,7 +233,7 @@
     <dt>Colour</dt><dd>Today's move from yesterday's close. Red is falling, amber is flat, green is rising.</dd>
     <dt>Height</dt><dd>Rising indexes float up; falling ones sink. The top and bottom of the lamp are a 1% move.</dd>
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
-    <dt>Economy</dt><dd>The smaller blobs on the right are the economy's groups: energy, metals, farm goods, Treasury rates and the slow numbers. Same colour, height and size rules; each shows its latest move (they do not replay the day). Tap one, or its name, to see its members.</dd>
+    <dt>Economy</dt><dd>The smaller blobs on the right are the economy's groups: energy, metals, farm goods, rates and the dollar, the slow numbers, debt and money, and shipping and trade. Same colour, height and size rules; each shows its latest move (they do not replay the day). Tap one, or its name, to see its members.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
     <dt>Fear</dt><dd id="helpFear">The VIX, the market's own fear gauge.</dd>
@@ -286,12 +286,12 @@
       const gs = (d.groups || []).filter(g => g.members && g.members.length).map(g => {
         const ms = g.members.map(m => ({ m, move: Mood.econMove(m.kind, m.prev, m.last) })).filter(x => x.move);
         const fc = ms.filter(x => !Mood.econSlow(x.m)).map(x => Mood.econChop(x.m)).filter(c => c != null);
-        return { key: g.key, name: g.name, pct: Mood.econGroupPct(ms), chop: fc.length ? fc.reduce((a, b) => a + b, 0) / fc.length : null };
+        return { key: g.key, name: g.name, short: g.short || g.name, pct: Mood.econGroupPct(ms), chop: fc.length ? fc.reduce((a, b) => a + b, 0) / fc.length : null };
       }).filter(g => g.pct != null).slice(0, ECON_MAX);
       gs.forEach((g, i) => {
         const L = econ.find(e => e.key === g.key);
-        if (L) Object.assign(L, { name: g.name, target: g.pct, chop: g.chop });
-        else econ.push({ key: g.key, name: g.name, target: g.pct, chop: g.chop, pct: g.pct, h: Mood.height(g.pct), sz: Mood.size(g.pct),
+        if (L) Object.assign(L, { name: g.name, short: g.short, target: g.pct, chop: g.chop });
+        else econ.push({ key: g.key, name: g.name, short: g.short, target: g.pct, chop: g.chop, pct: g.pct, h: Mood.height(g.pct), sz: Mood.size(g.pct),
                          sp: 1, ph: 40 + i * 10, col: Mood.colour(g.pct), drops: makeDrops() });
       });
       for (let i = econ.length - 1; i >= 0; i--) if (!gs.some(g => g.key === econ[i].key)) econ.splice(i, 1);
@@ -442,7 +442,7 @@
   // ---------- WebGL lamp ----------
   const canvas = $("lamp");
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, alpha: false });
-  const ECON_MAX = 6;                           // economy group blobs beside the four indexes (mm19)
+  const ECON_MAX = 8;                           // economy group blobs beside the four indexes (mm19)
   const N = (4 + ECON_MAX) * DROPS;
   let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat, uFear;
   if (gl) {
@@ -639,13 +639,21 @@
         if (CELL_KEYS.includes(ix.key)) { if (canOpen(ix.key)) { s.className = "door"; s.title = "Look inside"; }
           s.onclick = e => { if (openCell(ix.key)) e.stopPropagation(); }; }
         tags.appendChild(s); });
-      econ.forEach(g => { const a = document.createElement("span"); a.textContent = g.name; a.className = "door econ";
+      econ.forEach(g => { const a = document.createElement("span"); a.textContent = g.short; a.className = "door econ";
         a.title = "Look inside " + g.name; a.onclick = () => { location.href = "economy.html#g=" + g.key; }; tags.appendChild(a); });
     }
     lanes.concat(econ).forEach((L, i) => { if (L.tagX == null) return; const s = tags.children[i];
       const half = s.offsetWidth / 2 / innerWidth;   // a label never runs off either edge of the screen
       s.style.left = (clampN(L.tagX, half + 0.01, 1 - half - 0.01) * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%";
       s.style.visibility = "visible"; });
+    // economy labels sit close together: one that would touch the label before it drops a line
+    let prev = null;
+    for (const s of [...tags.children].slice(data.indexes.length)) {
+      const r = s.getBoundingClientRect();
+      if (prev && r.left < prev.right + 4 && r.right > prev.left - 4 && r.top < prev.bottom + 2 && r.bottom > prev.top - 2)
+        s.style.bottom = Math.max(0, innerHeight - prev.bottom - r.height - 2) + "px";   // sit just under the label before it
+      prev = s.getBoundingClientRect();
+    }
     $("moodWord").textContent = Mood.moodWord(avgPctShown);
     $("moodWord").style.color = hex(Mood.colour(avgPctShown).map(v => v * 0.35 + 0.65));
     $("moodSub").textContent = "Average move " + fmtPct(avgPctShown);

@@ -323,6 +323,7 @@ ECON = [
         ("silver", "Silver", "y", "SI=F", "pct", "$ / oz", "5min"),
         ("copper", "Copper", "y", "HG=F", "pct", "$ / lb", "5min"),
         ("platinum", "Platinum", "y", "PL=F", "pct", "$ / oz", "5min"),
+        ("palladium", "Palladium", "y", "PA=F", "pct", "$ / oz", "5min"),
         ("aluminium", "Aluminium", "y", "ALI=F", "pct", "$ / tonne", "5min"),
         ("steel", "Hot-rolled steel", "y", "HRC=F", "pct", "$ / short ton", "5min")]),
     ("farm", "Farm goods", "Farm", [
@@ -331,7 +332,15 @@ ECON = [
         ("wheat", "Wheat", "y", "ZW=F", "pct", "cents / bushel", "5min"),
         ("cotton", "Cotton", "y", "CT=F", "pct", "cents / lb", "5min"),
         ("coffee", "Coffee", "y", "KC=F", "pct", "cents / lb", "5min"),
-        ("sugar", "Sugar", "y", "SB=F", "pct", "cents / lb", "5min")]),
+        ("sugar", "Sugar", "y", "SB=F", "pct", "cents / lb", "5min"),
+        ("cocoa", "Cocoa", "y", "CC=F", "pct", "$ / tonne", "5min"),
+        ("oats", "Oats", "y", "ZO=F", "pct", "cents / bushel", "5min"),
+        ("rice", "Rough rice", "y", "ZR=F", "pct", "$ / hundredweight", "5min"),
+        ("oj", "Orange juice", "y", "OJ=F", "pct", "cents / lb", "5min"),
+        ("cattle", "Live cattle", "y", "LE=F", "pct", "cents / lb", "5min"),
+        ("feeder", "Feeder cattle", "y", "GF=F", "pct", "cents / lb", "5min"),
+        ("hogs", "Lean hogs", "y", "HE=F", "pct", "cents / lb", "5min"),
+        ("lumber", "Lumber", "y", "LBR=F", "pct", "$ / 1,000 board ft", "5min")]),
     ("rates", "Rates & the dollar", "Rates", [
         ("t3m", "3-month bill", "y", "^IRX", "bp", "% yield", "5min"),
         ("t5y", "5-year note", "y", "^FVX", "bp", "% yield", "5min"),
@@ -348,13 +357,33 @@ ECON = [
         ("retail", "Retail sales", "f", "RSAFS", "pct", "$ million / month", "monthly"),
         ("spending", "Consumer spending (PCE)", "f", "PCE", "pct", "$ billion / year", "monthly"),
         ("homes", "Home values (Case-Shiller)", "f", "CSUSHPINSA", "pct", "index", "monthly")]),
+    ("debt", "Debt & money", "Debt", [
+        ("credit", "Consumer credit", "f", "TOTALSL", "pct", "$ million owed", "monthly"),
+        ("cards", "Card & revolving debt", "f", "REVOLSL", "pct", "$ million owed", "monthly"),
+        ("fedDebt", "Federal debt", "f", "GFDEBTN", "pct", "$ million owed", "quarterly"),
+        ("m1", "Money supply (M1)", "f", "M1SL", "pct", "$ billion", "monthly"),
+        ("worldDebt", "World government debt", "i", "GGXWDG_NGDP/WEOWORLD", "pct", "% of world GDP", "yearly")]),
+    ("shipping", "Shipping & trade", "Shipping", [
+        ("trade", "Trade balance", "f", "BOPGSTB", "bn", "$ million / month", "monthly"),
+        ("cassShip", "Freight shipments (Cass)", "f", "FRGSHPUSM649NCIS", "pct", "index", "monthly"),
+        ("cassSpend", "Freight spending (Cass)", "f", "FRGEXPUSM649NCIS", "pct", "index", "monthly"),
+        ("trucking", "Trucking prices (PPI)", "f", "PCU484121484121", "pct", "index", "monthly")]),
 ]
 # things Clark asked for that no free keyless source carries: listed on the page, never faked
 ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls": "Payrolls", "claims": "Claims",
               "sentiment": "Sentiment", "retail": "Retail", "spending": "Spending", "homes": "Homes", "dollar": "Dollar", "t3m": "3-month", "t5y": "5-year",
               "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
-              "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI"}     # a blob's label; the full name rides in the tooltip
-ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)")]
+              "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI", "credit": "Credit", "cards": "Cards", "fedDebt": "Fed. debt",
+              "m1": "M1", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
+              "trucking": "Trucking", "feeder": "Feeder", "oj": "OJ"}     # a blob's label; the full name rides in the tooltip
+ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)"),
+                ("energy", "Propane", "Yahoo lists Mont Belvieu propane (B0=F) but it printed once in 5 days: too thin for a move"),
+                ("energy", "Ethanol", "Yahoo's ethanol future (EH=F) returns no prices; no other free keyless feed"),
+                ("shipping", "Baltic Dry Index", "licensed by the Baltic Exchange; no free feed (Cass freight indexes stand in)"),
+                ("shipping", "UPS / FedEx rates", "published as rate cards, not a data feed"),
+                ("shipping", "Trade by country", "the Census trade API now requires a key"),
+                ("debt", "Central-bank reserve holdings", "gold held by central banks: the IMF reserves API returned no data when tested; World Gold Council needs a login"),
+                ("debt", "Central-bank crypto holdings", "no official series: only private trackers' estimates")]
 
 def parse_fred(text):
     """[(date 'YYYY-MM-DD', value)] from a fredgraph.csv; FRED's '.' (no reading) rows are dropped."""
@@ -414,6 +443,22 @@ def get_fred(sid):
             return parse_fred(r.read().decode())
     return _retry(call)
 
+# IMF DataMapper (keyless JSON, World Economic Outlook): one value per year, and the WEO carries
+# projections years ahead, so only years before this one count as readings (2025 vs 2024 in 2026).
+# ponytail: yearly and an IMF estimate; upgrade = the IMF's own quarterly debt database, which needs SDMX.
+IMF = "https://www.imf.org/external/datamapper/api/v1/{ind}/{area}"
+def parse_imf(d, ind, area, year):
+    """Pure. [(YYYY-01-01, value)] for past years only."""
+    vals = d["values"][ind][area]
+    return [(f"{y}-01-01", float(v)) for y, v in sorted(vals.items()) if int(y) < year and v is not None]
+
+def get_imf(spec):
+    ind, area = spec.split("/")
+    def call():
+        with urllib.request.urlopen(IMF.format(ind=ind, area=area), timeout=30) as r:
+            return parse_imf(json.load(r), ind, area, datetime.now(timezone.utc).year)
+    return _retry(call)
+
 def build_economy(prev=None):
     old = {m["key"]: m for g in (prev or {}).get("groups", []) for m in g["members"]}   # last good file, for a series that fails right now
     groups, missing = [], [{"group": g, "name": n, "why": w} for g, n, w in ECON_MISSING]
@@ -425,6 +470,8 @@ def build_economy(prev=None):
                     try: intr = get(spec[3], "5m", "5d")
                     except Exception: intr = None
                     mem.append(econ_yahoo(spec, get(spec[3], "1d", "1mo"), intr)); time.sleep(0.3)
+                elif spec[2] == "i":
+                    mem.append(econ_fred(spec, get_imf(spec[3])))
                 else:
                     mem.append(econ_fred(spec, get_fred(spec[3])))
             except Exception as e:      # one dead series never blocks the rest, and is never faked
@@ -435,7 +482,7 @@ def build_economy(prev=None):
         groups.append({"key": gkey, "name": gname, "short": gshort, "members": mem})
     for g in groups:
         for m in g["members"]: m["short"] = ECON_SHORT.get(m["key"], m["name"])
-    return {"generated_at": int(time.time()), "source": "Yahoo Finance (delayed futures and yields) and FRED (each series at its own release rhythm)",
+    return {"generated_at": int(time.time()), "source": "Yahoo Finance (delayed futures and yields), FRED and the IMF (each series at its own release rhythm)",
             "groups": groups, "missing": missing}
 
 def selfcheck():
@@ -495,6 +542,11 @@ def selfcheck():
     # the fear gauge (VIX) reuses shape() itself, not a parallel parser — same function, key "vix"
     vs = shape("vix", "VIX", "^VIX", intr, daily)
     assert vs["key"] == "vix" and vs["last"] == 103.0, vs
+    # IMF: projections (this year and later) are not readings; a missing year is dropped
+    imf = {"values": {"D": {"W": {"2023": 90.8, "2024": 92, "2025": 93.9, "2026": 95.3, "2027": 97.2}}}}
+    assert parse_imf(imf, "D", "W", 2026) == [("2023-01-01", 90.8), ("2024-01-01", 92.0), ("2025-01-01", 93.9)]
+    # every ECON spec has a known source and rhythm (a typo'd "q" would silently land in the FRED branch)
+    assert all(s[2] in "yfi" and s[6] in ("5min", "weekly", "monthly", "quarterly", "yearly") for _, _, _, sp in ECON for s in sp)
     # economy: parse_fred drops '.' rows; a member is last-vs-the-close-before, dated by its own reading
     rows = parse_fred("observation_date,X\n2026-06-01,10\n2026-07-01,.\n2026-08-01,12.5\n")
     assert rows == [("2026-06-01", 10.0), ("2026-08-01", 12.5)], rows

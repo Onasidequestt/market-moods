@@ -5,18 +5,19 @@
 # the fetch.yml job comfortably miss its next scheduled start, since cancel-in-progress is false
 # and runs queue instead of overlapping.
 #
-# ponytail: every 30 minutes is a guess, not a measured ceiling — it just needs to be bigger than
+# ponytail: every 15 minutes (30 until 2026-09-30, Clark's mm20) is a guess, not a measured ceiling — it just needs to be bigger than
 # the slowest single index's fetch time (~6 min measured for Nasdaq) with headroom for GitHub's
 # best-effort cron slippage (5-20 min late, same caveat as fetch.yml). Ceiling: fine as long as no
 # single index's roster+price fetch creeps past ~15 min. Upgrade path if it does: cache each
 # index's ROSTER (the slow, rarely-changing part — which symbols are members) once a day in its
 # own file, and have this workflow fetch only PRICES for the cached roster every run; that turns
 # the roster's one-time cost (the HTTP calls in ROSTERS[key](), which is most of Nasdaq's ~5.5 min)
-# into a once-daily cost, leaving only per-symbol price calls (caps()/spark()) on the 30-min cycle.
+# into a once-daily cost, leaving only per-symbol price calls (caps()/spark()) on the 15-min cycle.
+# A full run (all four) measured ~8-9 min, so 15 leaves ~6 min of slack; a late start queues, never overlaps.
 name: fetch index companies
 on:
   schedule:
-    - cron: "5,35 13-20 * * 1-5"   # offset from fetch.yml's :00/:10/... slots, still market hours
+    - cron: "5,20,35,50 13-20 * * 1-5"   # every 15 min (mm20, 09-30; was 30), offset from fetch.yml's :00/:10/... slots
     - cron: "25 21 * * 1-5"        # once after the close
   workflow_dispatch:
 permissions:
