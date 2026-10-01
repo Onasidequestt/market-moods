@@ -373,6 +373,7 @@
       buildDays();
       if (firstLoad) initLanes();
       await loadEcon();
+      if (gl && !inCell) { draw(); ui(); }   // place the labels against a drawn lamp on the very first paint
       $("notice").classList.remove("on");
       $("timeline").hidden = mode !== "replay";
       $("days").hidden = mode !== "replay" || days.length < 2;   // before the first draw: it measures the footer
@@ -692,7 +693,8 @@
     for (const B of boxes) if (B) { B.s.style.left = (B.x / W_ * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible"; }
     // the two family captions (Stocks / Economy): above each family on a wide screen, at the left of each row on a phone
     const fm = $("fam");
-    if (fm) { fm.hidden = !econ.length; fm.classList.toggle("stacked", !!fam.stacked);
+    if (fm) { fm.hidden = !econ.length || fam.iY == null;   // never shown before draw() has given it a place
+      fm.classList.toggle("stacked", !!fam.stacked);
       const [cs, ce] = fm.children;
       cs.style.left = fam.stacked ? "16px" : (fam.iX * 100).toFixed(2) + "%"; cs.style.bottom = (fam.iY * 100).toFixed(2) + "%";
       ce.style.left = fam.stacked ? "16px" : (fam.eX * 100).toFixed(2) + "%"; ce.style.bottom = (fam.eY * 100).toFixed(2) + "%"; }
