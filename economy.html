@@ -52,11 +52,36 @@
   .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink-2); white-space: nowrap; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); pointer-events: auto; cursor: pointer; }
   @media (max-width: 480px) { .tags span { font-size: 10px; letter-spacing: .03em; } }   /* 7 labels share 390px */
-  .tip { position: fixed; z-index: 2; pointer-events: none; background: rgba(18, 11, 24, .92); border: 1px solid var(--line);
-    border-radius: 12px; padding: 8px 11px; font-size: 12.5px; color: var(--ink-2); max-width: 260px;
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 8px 30px rgba(0, 0, 0, .5); }
-  .tip b { color: var(--ink); font-weight: 600; }
-  .tip[hidden] { display: none; }
+  /* PANEL-CSS: the one details panel (identical block in index.html and economy.html; panel-check.sh compares them) */
+  .panel { position: fixed; z-index: 6; top: 0; right: 0; bottom: 0; width: 360px; max-width: 100%; overflow-y: auto; outline: none;
+    background: rgba(18, 11, 24, .94); border-left: 1px solid var(--line); box-shadow: -10px 0 40px rgba(0, 0, 0, .45);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    padding: max(18px, env(safe-area-inset-top)) 20px max(22px, env(safe-area-inset-bottom));
+    transform: translateX(100%); visibility: hidden; transition: transform .28s ease, visibility 0s linear .28s; }
+  .panel.open { transform: none; visibility: visible; transition: transform .28s ease; }
+  .panel .pHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .panel h2 { margin: 2px 0 0; font-size: 24px; font-weight: 600; line-height: 1.15; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .panel .pSym { margin-top: 4px; font-size: 15px; color: var(--ink-2); }
+  .panel .pClose { appearance: none; flex: none; width: 48px; height: 48px; margin: -6px -8px 0 0; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--glass); color: var(--ink); font: inherit; font-size: 20px; line-height: 1; cursor: pointer; }
+  .panel .pClose:focus-visible, .panel .pLook:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .panel .pMove { margin-top: 18px; font-size: 40px; font-weight: 300; letter-spacing: -.02em; line-height: 1.1; }
+  .panel .pMoveSub { margin-top: 4px; font-size: 15px; color: var(--ink-2); }
+  .panel dl { margin: 20px 0 0; }
+  .panel dl > div { padding: 11px 0; border-top: 1px solid var(--line); }
+  .panel dt { font-size: 13px; color: var(--ink-3); letter-spacing: .04em; text-transform: uppercase; }
+  .panel dd { margin: 3px 0 0; font-size: 17px; color: var(--ink); overflow-wrap: anywhere; }
+  .panel .pLook { appearance: none; display: block; width: 100%; min-height: 48px; margin-top: 18px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--glass); color: var(--ink); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .panel .pLook:hover, .panel .pClose:hover { border-color: rgba(244, 236, 247, .32); }
+  .panel [hidden] { display: none; }
+  @media (max-width: 699px) {
+    .panel { top: auto; left: 0; width: auto; max-height: 60vh; max-height: 60dvh; border-left: 0; border-top: 1px solid var(--line);
+      border-radius: 18px 18px 0 0; box-shadow: 0 -10px 40px rgba(0, 0, 0, .45); transform: translateY(100%); }
+    .panel.open { transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .panel, .panel.open { transition: none; } }
+  /* END PANEL-CSS */
   footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
   .notice { text-align: center; color: var(--ink-2); font-size: 14px; display: none; margin: 0 0 10px; }
   .notice.on { display: block; }
@@ -105,7 +130,13 @@
 <body>
 <canvas id="lamp" aria-hidden="true"></canvas>
 <canvas id="cell" aria-hidden="true"></canvas>
-<div class="tip" id="tip" role="tooltip" hidden></div>
+<aside class="panel" id="panel" role="dialog" aria-modal="false" aria-labelledby="pTitle" tabindex="-1" inert aria-hidden="true">
+  <div class="pHead"><div><h2 id="pTitle"></h2><div class="pSym" id="pSym"></div></div>
+    <button class="pClose" id="pClose" type="button" aria-label="Close details">&#10005;</button></div>
+  <div class="pMove num" id="pMove"></div><div class="pMoveSub" id="pMoveSub"></div>
+  <dl id="pRows"></dl>
+  <button class="pLook" id="pLook" type="button" hidden>Look inside &rsaquo;</button>
+</aside>
 <div class="chrome" id="chrome">
   <div class="tags" id="tags" aria-hidden="true"></div>
   <header>
@@ -157,6 +188,55 @@
 (() => {
   "use strict";
   const $ = id => document.getElementById(id);
+  // PANEL-JS: the one details panel (identical block in index.html and economy.html; panel-check.sh compares them).
+  // Panel.open(getSpec): getSpec() returns the CURRENT real numbers of the clicked thing (re-read 4x a second, so the
+  // panel never goes stale while the lamp keeps moving) or null when it is gone. spec = { title, sub, moveText, dir,
+  // color, moveSub, rows: [[label, value]], look: { run } }. A missing value (null/undefined/"") draws "—", never 0.
+  const Panel = (() => {
+    const el = $("panel"), look = $("pLook");
+    let getter = null, opener = null, sig = "", timer = 0, lookRun = null;
+    const isOpen = () => el.classList.contains("open");
+    const none = v => v == null || v === "" || (typeof v === "number" && !isFinite(v));
+    function paint(s) {
+      const j = JSON.stringify([s.title, s.sub, s.moveText, s.dir, s.color, s.moveSub, s.rows, !!s.look]);
+      lookRun = s.look ? s.look.run : null;
+      if (j === sig) return; sig = j;
+      $("pTitle").textContent = s.title; $("pSym").textContent = s.sub || ""; $("pSym").hidden = !s.sub;
+      const d = none(s.moveText) ? null : s.dir > 0 ? 1 : s.dir < 0 ? -1 : 0;
+      $("pMove").textContent = d == null ? "—" : (d > 0 ? "▲ " : d < 0 ? "▼ " : "▬ ") + s.moveText;   // arrow + sign, never colour alone
+      $("pMove").style.color = d == null ? "" : s.color || "";
+      $("pMoveSub").textContent = d == null ? "" : (d > 0 ? "Up " : d < 0 ? "Down " : "Flat ") + (s.moveSub || "");
+      const dl = $("pRows"); dl.textContent = "";
+      for (const [k, v] of s.rows || []) {
+        const r = document.createElement("div"), dt = document.createElement("dt"), dd = document.createElement("dd");
+        dt.textContent = k; dd.textContent = none(v) ? "—" : v; r.append(dt, dd); dl.appendChild(r);
+      }
+      look.hidden = !s.look;
+    }
+    function refresh() { const s = getter && getter(); if (s) paint(s); else close(false); }
+    function open(get) {
+      if (!isOpen()) opener = document.activeElement;
+      getter = get; const s = get(); if (!s) return false;
+      paint(s); el.inert = false; el.removeAttribute("aria-hidden"); el.classList.add("open");
+      el.scrollTop = 0; $("pClose").focus({ preventScroll: true });
+      clearInterval(timer); timer = setInterval(refresh, 250);
+      return true;
+    }
+    function close(restore) {
+      if (!isOpen()) return false;
+      el.classList.remove("open"); el.inert = true; el.setAttribute("aria-hidden", "true"); clearInterval(timer); getter = null; sig = "";
+      if (restore && opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
+      return true;
+    }
+    $("pClose").onclick = () => close(true);
+    look.onclick = () => { const f = lookRun; close(false); if (f) f(); };
+    // a click outside closes it; the same click must not also toggle the page's chrome, so handlers ask hadOpen
+    const api = { open, close, isOpen, hadOpen: false };
+    document.addEventListener("click", e => { api.hadOpen = isOpen(); if (api.hadOpen && !el.contains(e.target)) close(false); setTimeout(() => { api.hadOpen = false; }); }, true);
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && isOpen()) { e.stopPropagation(); e.preventDefault(); close(true); } }, true);
+    return api;
+  })();
+  // END PANEL-JS
   const DATA_URL = "data/economy.json", REFRESH_MS = 5 * 60 * 1000;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const DROPS = 5;
@@ -172,7 +252,7 @@
   };
 
   // ---------- state ----------
-  let data = null, G = [], lanes = [], inCell = false, cellKey = null, avgShown = 0, tipNode = null;
+  let data = null, G = [], lanes = [], inCell = false, cellKey = null, avgShown = 0;
   const wantG = (/(^#|&)g=(\w+)/.exec(location.hash) || [])[2];
   const nodes = new Map();        // member key -> node (positions persist)
 
@@ -321,6 +401,7 @@
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
         const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, band[0], band[1]);
         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
+        if (core) { L.hx = x; L.hy = y; L.hitR = Math.max(r * 1.5, laneW * 0.45); }   // tap target: a small blob gets its lane's width
         low = Math.min(low, y - r * 1.1);
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
@@ -485,7 +566,7 @@
     return true;
   }
   function closeCell() {
-    inCell = false; document.body.classList.remove("incell"); $("backBtn").hidden = true; $("stocksBtn").hidden = false; $("tip").hidden = true; tipNode = null;
+    inCell = false; document.body.classList.remove("incell"); $("backBtn").hidden = true; $("stocksBtn").hidden = false; Panel.close(false);
     $("notice").classList.remove("on"); cx2.setTransform(cvDpr, 0, 0, cvDpr, 0, 0); cx2.clearRect(0, 0, innerWidth, innerHeight);
   }
 
@@ -531,17 +612,29 @@
 
   // ---------- tap for details ----------
   function nodeAt(x, y) { let hit = null; for (const N of nodes.values()) if (N.dx != null && Math.hypot(x - N.dx, y - N.dy) <= N.r + 4 && (!hit || N.r < hit.r)) hit = N; return hit; }
-  function showTip(N, x, y) {
-    const m = N.m, a = Mood.econAsOf(m, Date.now()), t = $("tip");
-    const prevWord = Mood.econSlow(m) ? "the reading before (" + (m.prev_asof ? m.prev_asof.slice(0, 10) : "earlier") + ")" : "the previous close";
-    t.innerHTML = `<b></b><br><span class="v"></span><br>${m.mv.text} on ${prevWord}<br>${a.label}` + (m.yoy != null ? `<br>${fmtPct(m.yoy)} on a year ago` : "") + `<br>${m.src}`;
-    t.querySelector("b").textContent = m.name; t.querySelector(".v").textContent = fmtNum(m.last, m.unit);
-    t.hidden = false;
-    const w = t.offsetWidth, h = t.offsetHeight;
-    t.style.left = clampN(x + 14, 8, innerWidth - w - 8) + "px"; t.style.top = clampN(y + 14, 8, innerHeight - h - 8) + "px";
-    tipNode = N;
+  // a member blob's details: every field is the member's own in economy.json; a missing one draws "—"
+  function memberSpec(key) {
+    const N = nodes.get(key); if (!N) return null;
+    const m = N.m, a = Mood.econAsOf(m, Date.now());
+    return { title: m.name, sub: m.sym || m.src, moveText: m.mv.text, dir: m.mv.pct, color: hex(Mood.colour(m.mv.pct)),
+      moveSub: "on " + (Mood.econSlow(m) ? "the reading before (" + (m.prev_asof ? m.prev_asof.slice(0, 10) : "earlier") + ")" : "the previous close"),
+      rows: [["Last value", m.last == null ? null : fmtNum(m.last, m.unit)], ["Unit", m.unit], ["Frequency", m.freq], ["As of", a.label],
+             ["Year on year", m.yoy == null ? null : fmtPct(m.yoy)], ["Source", m.src]] };
   }
-  cv.addEventListener("click", e => { const N = nodeAt(e.clientX, e.clientY); if (N && N !== tipNode) showTip(N, e.clientX, e.clientY); else { $("tip").hidden = true; tipNode = null; } });
+  // a group blob's details: its average move, how many measures, the one pulling it, when it was updated, the feed
+  function groupSpec(key) {
+    const g = G.find(x => x.key === key); if (!g) return null;
+    const drv = g.members.slice().sort((a, b) => Math.abs(b.mv.pct) - Math.abs(a.mv.pct))[0];
+    return { title: g.name, sub: "Average of " + g.members.length + " measures", moveText: fmtPct(g.pct), dir: g.pct, color: hex(Mood.colour(g.pct)),
+      moveSub: "on the previous reading", rows: [["Biggest mover", drv ? `${drv.short || drv.name} ${drv.mv.text}` : null], ["Updated", groupWhenLabel(g, Date.now())], ["Source", data.source]],
+      look: { run: () => openCell(g.key) } };
+  }
+  cv.addEventListener("click", e => { const N = nodeAt(e.clientX, e.clientY); if (N) Panel.open(() => memberSpec(N.key)); });
+  // the lamp's group blobs: the tap target each recorded when it was drawn (same rule as the front page)
+  canvas.addEventListener("click", e => {
+    const H = innerHeight, i = lanes.findIndex(L => L.hx != null && Math.hypot(e.clientX - L.hx * H, e.clientY - (H - L.hy * H)) < L.hitR * H);
+    if (i >= 0 && G[i]) Panel.open(() => groupSpec(G[i].key));
+  });
   $("backBtn").onclick = closeCell;
   $("helpBtn").onclick = () => { const h = $("help"); h.showModal(); h.scrollTop = 0; };
   $("helpClose").onclick = () => $("help").close();
@@ -561,6 +654,10 @@
   }
   load(); setInterval(load, REFRESH_MS);
   requestAnimationFrame(frame);
+  // browser-check hook: where each blob is right now, in client px (panel-check.sh clicks there)
+  window.__em = { get inCell() { return inCell; }, groupXY(key) { const H = innerHeight, i = G.findIndex(g => g.key === key), L = lanes[i];
+                    return L && L.hx != null ? { x: L.hx * H, y: H - L.hy * H } : null; },
+                  memberXY(key) { const N = nodes.get(key); return N && N.dx != null ? { x: N.dx, y: N.dy } : null; } };
 })();
 </script>
 </body>
