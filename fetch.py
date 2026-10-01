@@ -375,7 +375,7 @@ ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls
               "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
               "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI", "credit": "Credit", "cards": "Cards", "fedDebt": "Fed. debt",
               "m1": "M1", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
-              "trucking": "Trucking", "feeder": "Feeder", "oj": "OJ"}     # a blob's label; the full name rides in the tooltip
+              "trucking": "Trucking", "feeder": "Feeder", "oj": "OJ", "cattle": "Cattle", "rice": "Rice", "hogs": "Hogs"}     # a blob's label; the full name rides in the tooltip
 ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)"),
                 ("energy", "Propane", "Yahoo lists Mont Belvieu propane (B0=F) but it printed once in 5 days: too thin for a move"),
                 ("energy", "Ethanol", "Yahoo's ethanol future (EH=F) returns no prices; no other free keyless feed"),

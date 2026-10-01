@@ -67,8 +67,9 @@
   .tags span.door { pointer-events: auto; cursor: pointer; }
   .tags span.econ { font-size: 10px; opacity: .8; }
   .fam { position: fixed; inset: 0; pointer-events: none; }
-  .fam span { position: absolute; transform: translate(-50%, 0); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); opacity: .7; white-space: nowrap; }
-  .fam.stacked { display: none; }   /* phone: two rows already split stocks (top) from the economy (bottom) */
+  .fam span { position: absolute; transform: translate(-50%, 0); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2); opacity: .85; white-space: nowrap;
+    padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, .14); }
+  .fam.stacked { display: none; }   /* phone: the two rows split stocks (top) from the economy (bottom); a caption there hit the index labels */
   body.incell .fam { display: none; }
   .cellcap { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; display: none; }
   body.incell .cellcap { display: block; }
@@ -238,7 +239,7 @@
     <dt>Colour</dt><dd>Today's move from yesterday's close. Red is falling, amber is flat, green is rising.</dd>
     <dt>Height</dt><dd>Rising indexes float up; falling ones sink. The top and bottom of the lamp are a 1% move.</dd>
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
-    <dt>Economy</dt><dd>The smaller blobs on the right are the economy's groups: energy, metals, farm goods, rates and the dollar, the slow numbers, debt and money, and shipping and trade. Same colour, height and size rules; each shows its latest move (they do not replay the day). Tap one, or its name, to see its members.</dd>
+    <dt>Economy</dt><dd>The smaller blobs on the right are the economy's groups: energy, metals, farm goods, rates and the dollar, the slow numbers, debt and money, and shipping and trade. Same colour, height and size rules; each shows its latest move (they do not replay the day), and some are weekly, monthly, quarterly or yearly numbers. On a phone they ride in their own lower row. Tap one, or its name, to see its members.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
     <dt>Fear</dt><dd id="helpFear">The VIX, the market's own fear gauge.</dd>
@@ -284,11 +285,15 @@
   // They have no intraday replay: a group shows its latest move whatever the timeline is doing.
   const econ = [];
   const fam = {};             // where the Stocks / Economy captions go, set by draw()
+  let econBusy = false;
   async function loadEcon() {
+    if (econBusy) return; econBusy = true;
     try {
       const r = await fetch("data/economy.json?t=" + Date.now(), { cache: "no-store" });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const d = await r.json();
+      // a file more than 3 days old means the economy fetch has stopped: show no economy blobs rather than old ones as current
+      if (!(Date.now() / 1000 - d.generated_at < 3 * 86400)) { econ.length = 0; document.body.dataset.econ = "stale"; return; }
       const gs = (d.groups || []).filter(g => g.members && g.members.length).map(g => {
         const ms = g.members.map(m => ({ m, move: Mood.econMove(m.kind, m.prev, m.last) })).filter(x => x.move);
         const fc = ms.filter(x => !Mood.econSlow(x.m)).map(x => Mood.econChop(x.m)).filter(c => c != null);
@@ -303,6 +308,7 @@
       for (let i = econ.length - 1; i >= 0; i--) if (!gs.some(g => g.key === econ[i].key)) econ.splice(i, 1);
       document.body.dataset.econ = econ.map(e => e.key + ":" + e.target.toFixed(2)).join(",");   // read by browser-check.sh
     } catch (e) { console.warn("market-moods economy:", e.message); }   // no economy file = the four indexes alone (honest)
+    finally { econBusy = false; }
   }
   let avgPctShown = 0;
   // fear gauge (VIX): a SLOW EMA of Mood.fear(level) — VIX itself moves far slower than the
@@ -449,7 +455,9 @@
   const canvas = $("lamp");
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, alpha: false });
   const ECON_MAX = 8;                           // economy group blobs beside the four indexes (mm19)
-  const ECON_DROPS = 2;                         // an economy blob: core + one satellite (keeps the shader inside phone GPUs' uniform budget)
+  // an economy blob: core + one satellite; a GPU with a small uniform budget (some phones expose 64 vectors)
+  // gets the core alone, so the shader always links: 2 vec3 arrays of N plus ~8 other uniforms must fit
+  const ECON_DROPS = gl && gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) < 2 * (4 * DROPS + ECON_MAX * 2) + 8 ? 1 : 2;
   const N = 4 * DROPS + ECON_MAX * ECON_DROPS;
   let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat, uFear;
   if (gl) {
@@ -592,7 +600,7 @@
     const span = band[1] - band[0];
     const bandI = stacked ? [band[0] + span * 0.55, band[1]] : band, bandE = stacked ? [band[0], band[0] + span * 0.22] : band;
     fam.stacked = stacked; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
-    fam.iY = bandI[1] + baseR * 1.6; fam.eY = bandE[1] + (stacked ? wE * 0.3 + 0.02 : baseR * 1.6);   // just over the family's highest blob
+    fam.iY = bandI[1] + baseR * 1.6; fam.eY = bandE[1] + (stacked ? wE * 0.36 + 0.025 : baseR * 1.6);   // just over the family's highest blob
     let n = 0;
     lanes.concat(econ).forEach((L, i) => {
       const isE = i >= 4, w = isE ? wE : laneW, bd = isE ? bandE : bandI;
@@ -606,7 +614,8 @@
         // they break away and rejoin. A steady index stays whole, a choppy one comes apart.
         const brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));   // break-away clock shared: equal chop, equal spread
-        const R = isE ? Math.min(baseR * L.sz * EW, w * 0.3) : baseR * L.sz;   // an economy blob never outgrows its narrow lane; offsets scale with the blob
+        if (isE && stacked && !core) { balls[n * 3 + 2] = 0; n++; return; }   // phone: a small economy blob stays one clean drop
+        const R = isE ? Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3)) : baseR * L.sz;   // an economy blob never outgrows its narrow lane; offsets scale with the blob
         const r = R * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? w * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
         const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
@@ -664,7 +673,7 @@
     const all = lanes.concat(econ), els = [...tags.children], W_ = innerWidth, H_ = innerHeight;
     const boxes = all.map((L, i) => { const s = els[i]; if (!s || L.tagX == null) return null;
       const w = s.offsetWidth, h = s.offsetHeight || 14, half = w / 2 / W_;
-      const x = clampN(L.tagX, half + 0.01, 1 - half - 0.01) * W_;
+      const g = 24 / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges
       return { s, l: x - w / 2, r: x + w / 2, h, b: Math.max(0, L.tagY) * H_, x }; });
     const placed = [];
     boxes.forEach((B, i) => { if (!B) return;

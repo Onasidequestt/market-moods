@@ -500,8 +500,10 @@
       g.el.querySelector(".lvl").textContent = groupWhenLabel(g, now);
     });
     const tags = $("tags");
+    const ws = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetWidth : 0);   // read every width first, then write
     lanes.forEach((L, i) => { if (L.tagX == null || !tags.children[i]) return; const s = tags.children[i];
-      s.style.left = (L.tagX * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%"; s.style.visibility = "visible"; });
+      const half = ws[i] / 2 / innerWidth, g = 24 / innerWidth;   // a 24px gutter: no label runs to the screen edge
+      s.style.left = (Math.min(1 - half - g, Math.max(half + g, L.tagX)) * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%"; s.style.visibility = "visible"; });
     // the biggest single mover among market-traded members, said in words: real data, never a slogan
     const fast = G.flatMap(g => g.members.filter(m => !Mood.econSlow(m)));
     const big = fast.slice().sort((a, b) => Math.abs(b.mv.pct) - Math.abs(a.mv.pct))[0];
