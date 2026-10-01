@@ -142,11 +142,11 @@
     <dt>Height</dt><dd>Up floats, down sinks. Inside a group the reach is 2.5%, as inside a company view.</dd>
     <dt>Size</dt><dd>A bigger move is a bigger blob. There is no market value to size a price by.</dd>
     <dt>Motion</dt><dd>Restless when the last hour's prints were choppy. Weekly and monthly numbers have no last hour, so they drift slowly.</dd>
-    <dt>Move</dt><dd id="helpUnits">Prices: percent change on the previous close. Rates: change in basis points (10 bp counts as 1%). Unemployment: change in points (0.1 pt counts as 1%). Jobs: thousands added (150k counts as 1%). Prices, sales and spending: percent change on the previous reading.</dd>
-    <dt>Dates</dt><dd>Prices are delayed by about 10 minutes while their market is open, and say "closed" with the time of the last print when it is not. Weekly and monthly numbers carry the date of the reading itself, and are never called live.</dd>
+    <dt>Move</dt><dd id="helpUnits">Prices: percent change on the previous close. Rates: change in basis points (10 bp counts as 1%). Unemployment: change in points (0.1 pt counts as 1%). Jobs: thousands added (150k counts as 1%). Trade balance: change in dollars ($20 bn counts as 1%); the US runs a deficit, so a wider gap is a fall. World government debt: change in points of world GDP (1 pt counts as 1%), an IMF estimate. Prices, sales, spending, debts and freight: percent change on the previous reading.</dd>
+    <dt>Dates</dt><dd>Prices are delayed by about 10 minutes while their market is open, and say "closed" with the time of the last print when it is not. Weekly, monthly, quarterly and yearly numbers carry the period of the reading itself (federal debt: its quarter, which lands about three months after it ends; world debt: the last full year), and are never called live.</dd>
     <dt>A group's move</dt><dd>The plain average of its members' moves. A group with market prices averages only those; the economy blob averages its slow numbers, each at its own date.</dd>
   </dl>
-  <p class="src" id="src">Data: Yahoo Finance and FRED.</p>
+  <p class="src" id="src">Data: Yahoo Finance, FRED and the IMF.</p>
   <p class="src" id="srcMissing" hidden></p>
   <button class="btn close" id="helpClose" type="button">Close</button>
 </dialog>
@@ -255,7 +255,7 @@
   // ---------- lamp ----------
   const canvas = $("lamp");
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, alpha: false });
-  const NB = 5 * DROPS;
+  const MAXG = 8, NB = MAXG * DROPS;   // shader slots: up to 8 groups (7 today); a group past the slots would be silently undrawn
   let uRes, uBalls, uCols, uBgTop, uBgBot, uHeat;
   if (gl) {
     const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -316,7 +316,7 @@
       L.drops.forEach((d, k) => {
         const core = k === 0, brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));
-        const R = baseR * L.sz, r = R * d.rr, room = Math.max(0, laneW * 0.5 - r);
+        const R = Math.min(baseR * L.sz, laneW * 0.36), r = R * d.rr, room = Math.max(0, laneW * 0.5 - r);   // capped to its lane: two big neighbours never fuse
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
         const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, band[0], band[1]);
         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
@@ -326,7 +326,7 @@
       });
       L.tagX = cx / aspect; L.tagY = low - 0.035;
     });
-    canvas.dataset.drops = n;   // read by economy-check.sh: how many wax drops were actually drawn
+    canvas.dataset.drops = Math.min(n, NB);   // read by economy-check.sh: drops the shader can actually draw (slots past NB are dropped by GL)
     const heat = Mood.colour(avgShown);
     gl.uniform2f(uRes, W, H); gl.uniform3fv(uBalls, balls); gl.uniform3fv(uCols, cols);
     gl.uniform3f(uBgTop, 0.035, 0.02, 0.055); gl.uniform3f(uBgBot, 0.07, 0.035, 0.08); gl.uniform3f(uHeat, heat[0], heat[1], heat[2]);

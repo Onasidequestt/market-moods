@@ -204,7 +204,8 @@ near(M.econMove("pt", 4.1, 4.2).pct, 1, "econ pt: 0.1 point counts as 1%");
 near(M.econMove("jobs", 100000, 100150).pct, 1, "econ jobs: 150k jobs counts as 1%");
 ok(M.econMove("pct", 0, 5) === null && M.econMove("bp", NaN, 5) === null && M.econMove("nope", 1, 2) === null, "econ: no move rather than a made-up one");
 ok(M.econMove("bp", 5, 5.06).text === "+6 bp" && M.econMove("pct", 100, 98.5).text === "−1.50%" && M.econMove("jobs", 1, 163).text === "+162k jobs", "econ: the words say the unit");
-near(M.econMove("bn", -88576, -78576).pct, 2, "econ bn: a $10 bn narrower trade gap counts as +2%");
+near(M.econMove("bn", -88576, -68576).pct, 1, "econ bn: a $20 bn narrower trade gap counts as +1%");
+ok(M.econMove("gdp", 92, 93.9).text === "+1.9 pt of GDP" && Math.abs(M.econMove("gdp", 92, 93.9).pct - 1.9) < 1e-9, "econ gdp: a share of GDP moves in points, 1 pt = 1%");
 ok(M.econMove("bn", -88576, -98576).text === "−$10.0 bn" && M.econMove("bn", 1, 1).text === "$0.0 bn", "econ bn: the words say dollars, sign first, no -0");
 ok(M.econSlow({ freq: "quarterly" }) && M.econSlow({ freq: "yearly" }), "econ: quarterly and yearly are slow");
 ok(M.econAsOf({ freq: "quarterly", asof: "2026-04-01" }, 0).label === "quarterly · Q2 2026" && M.econAsOf({ freq: "yearly", asof: "2025-01-01" }, 0).label === "yearly · 2025", "econ time: quarterly names its quarter, yearly its year");
@@ -245,7 +246,7 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
       ok(g.members.length >= 3, `${g.key}: at least 3 members live (${g.members.length})`);
       for (const m of g.members) {
         ok(!seen.has(m.key), `${m.key}: not in two groups`); seen.add(m.key); all.push(m);
-        ok(["pct", "bp", "pt", "jobs", "bn"].includes(m.kind) && ["5min", "daily", "weekly", "monthly", "quarterly", "yearly"].includes(m.freq), `${m.key}: known kind and rhythm`);
+        ok(["pct", "bp", "pt", "jobs", "bn", "gdp"].includes(m.kind) && ["5min", "daily", "weekly", "monthly", "quarterly", "yearly"].includes(m.freq), `${m.key}: known kind and rhythm`);
         ok(Number.isFinite(m.prev) && Number.isFinite(m.last) && m.name && m.unit && m.src && m.short, `${m.key}: real numbers, named, with unit and source`);
         const mv = M.econMove(m.kind, m.prev, m.last);
         ok(mv && Math.abs(mv.pct) < 30, `${m.key}: a move exists and is under 30% (${mv && mv.text}): a bigger one is a parse bug, not news`);

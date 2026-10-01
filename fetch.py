@@ -362,7 +362,7 @@ ECON = [
         ("cards", "Card & revolving debt", "f", "REVOLSL", "pct", "$ million owed", "monthly"),
         ("fedDebt", "Federal debt", "f", "GFDEBTN", "pct", "$ million owed", "quarterly"),
         ("m1", "Money supply (M1)", "f", "M1SL", "pct", "$ billion", "monthly"),
-        ("worldDebt", "World government debt", "i", "GGXWDG_NGDP/WEOWORLD", "pct", "% of world GDP", "yearly")]),
+        ("worldDebt", "World government debt", "i", "GGXWDG_NGDP/WEOWORLD", "gdp", "% of world GDP (IMF estimate)", "yearly")]),
     ("shipping", "Shipping & trade", "Shipping", [
         ("trade", "Trade balance", "f", "BOPGSTB", "bn", "$ million / month", "monthly"),
         ("cassShip", "Freight shipments (Cass)", "f", "FRGSHPUSM649NCIS", "pct", "index", "monthly"),
@@ -430,7 +430,7 @@ def econ_fred(spec, rows):
     if len(rows) < 2: raise ValueError(f"{sid}: fewer than two readings")
     (pd_, prev), (ld, last) = rows[-2], rows[-1]
     m = {"key": key, "name": name, "sym": sid, "kind": kind, "unit": unit, "freq": freq,
-         "src": f"FRED ({sid})", "prev": prev, "last": last, "asof": ld, "prev_asof": pd_}
+         "src": f"IMF World Economic Outlook ({sid}, estimate)" if spec[2] == "i" else f"FRED ({sid})", "prev": prev, "last": last, "asof": ld, "prev_asof": pd_}
     if freq == "monthly" and kind == "pct" and len(rows) > 12:
         m["yoy"] = round((last / rows[-13][1] - 1) * 100, 2)      # against the same month a year before
     return m
@@ -482,7 +482,7 @@ def build_economy(prev=None):
         groups.append({"key": gkey, "name": gname, "short": gshort, "members": mem})
     for g in groups:
         for m in g["members"]: m["short"] = ECON_SHORT.get(m["key"], m["name"])
-    return {"generated_at": int(time.time()), "source": "Yahoo Finance (delayed futures and yields), FRED and the IMF (each series at its own release rhythm)",
+    return {"generated_at": int(time.time()), "source": "Yahoo Finance (delayed futures and yields), FRED and the IMF World Economic Outlook (each series at its own release rhythm)",
             "groups": groups, "missing": missing}
 
 def selfcheck():

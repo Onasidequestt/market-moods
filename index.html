@@ -66,6 +66,10 @@
   .tags { position: fixed; inset: 0; pointer-events: none; }
   .tags span.door { pointer-events: auto; cursor: pointer; }
   .tags span.econ { font-size: 10px; opacity: .8; }
+  .fam { position: fixed; inset: 0; pointer-events: none; }
+  .fam span { position: absolute; transform: translate(-50%, 0); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); opacity: .7; white-space: nowrap; }
+  .fam.stacked { display: none; }   /* phone: two rows already split stocks (top) from the economy (bottom) */
+  body.incell .fam { display: none; }
   .cellcap { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; display: none; }
   body.incell .cellcap { display: block; }
   .cellcap .word { font-size: clamp(30px, 5.4vw, 58px); font-weight: 200; letter-spacing: -.02em; line-height: 1.05;
@@ -180,6 +184,7 @@
 
 <div class="chrome" id="chrome">
   <div class="tags" id="tags" aria-hidden="true"></div>
+  <div class="fam" id="fam" aria-hidden="true" hidden><span>Stocks</span><span>Economy</span></div>
   <header>
     <div class="brand">
       <h1>Market Moods</h1>
@@ -278,6 +283,7 @@
   // Mood.econGroupPct average economy.html shows, and a tap opens that group's inside view there.
   // They have no intraday replay: a group shows its latest move whatever the timeline is doing.
   const econ = [];
+  const fam = {};             // where the Stocks / Economy captions go, set by draw()
   async function loadEcon() {
     try {
       const r = await fetch("data/economy.json?t=" + Date.now(), { cache: "no-store" });
@@ -292,7 +298,7 @@
         const L = econ.find(e => e.key === g.key);
         if (L) Object.assign(L, { name: g.name, short: g.short, target: g.pct, chop: g.chop });
         else econ.push({ key: g.key, name: g.name, short: g.short, target: g.pct, chop: g.chop, pct: g.pct, h: Mood.height(g.pct), sz: Mood.size(g.pct),
-                         sp: 1, ph: 40 + i * 10, col: Mood.colour(g.pct), drops: makeDrops() });
+                         sp: 1, ph: 40 + i * 10, col: Mood.colour(g.pct), drops: makeDrops(ECON_DROPS) });
       });
       for (let i = econ.length - 1; i >= 0; i--) if (!gs.some(g => g.key === econ[i].key)) econ.splice(i, 1);
       document.body.dataset.econ = econ.map(e => e.key + ":" + e.target.toFixed(2)).join(",");   // read by browser-check.sh
@@ -426,9 +432,9 @@
       lanes.push({ pct: p0, h: Mood.height(p0), sz: Mood.size(p0), sp: 1, ph: i * 10, col: Mood.colour(p0), drops: makeDrops() });
     });
   }
-  function makeDrops() {
+  function makeDrops(count = DROPS) {
     const drops = [];
-    for (let k = 0; k < DROPS; k++) {
+    for (let k = 0; k < count; k++) {
       const s = k * 2.71;                 // same drop shapes in every lane: only the data may make them differ
       drops.push({ ax: 0.6 + 0.4 * frac(s * 1.3), wx: 0.23 + 0.31 * frac(s * 2.1), px: frac(s * 3.7) * 6.28,
                    ay: 0.7 + 0.5 * frac(s * 4.3), wy: 0.11 + 0.19 * frac(s * 5.9), py: frac(s * 6.1) * 6.28,
@@ -443,7 +449,8 @@
   const canvas = $("lamp");
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, alpha: false });
   const ECON_MAX = 8;                           // economy group blobs beside the four indexes (mm19)
-  const N = (4 + ECON_MAX) * DROPS;
+  const ECON_DROPS = 2;                         // an economy blob: core + one satellite (keeps the shader inside phone GPUs' uniform budget)
+  const N = 4 * DROPS + ECON_MAX * ECON_DROPS;
   let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat, uFear;
   if (gl) {
     const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -573,17 +580,25 @@
 
   function draw() {
     const W = canvas.width, H = canvas.height, aspect = W / H;
-    // index lanes are full width, economy lanes 0.6 of one (smaller blobs): together they share the screen
-    // a half-lane gap between the two families keeps their wax fields from fusing into one glob
-    const EW = 0.6, GAP = econ.length ? 0.5 : 0, laneW = aspect / (4 + GAP + EW * econ.length);
+    // wide screens: index lanes full width, economy lanes 0.6 of one, a half-lane gap between the two
+    // families so their wax fields never fuse. Narrow (phone): stocks ride the upper row and the
+    // economy the lower one, each family spread over the whole width, each with its own up/down band.
+    const stacked = econ.length > 0 && aspect < 0.8;
+    const EW = 0.6, GAP = econ.length && !stacked ? 0.5 : 0;
+    const laneW = stacked ? aspect / 4 : aspect / (4 + GAP + EW * econ.length);
+    const wE = stacked ? aspect / Math.max(1, econ.length) : laneW * EW, x0E = stacked ? 0 : (4 + GAP) * laneW;
     const baseR = Math.min(laneW * 0.34, 0.095) * pulseNow;   // the heartbeat: exactly 1 when pulseAmp is 0
     const band = travel(baseR * 1.4 * 1.25);   // biggest blob (size 1.4) with its droplets bunched: body edge at (Σr⁴)^¼ ≈ 1.23 R
+    const span = band[1] - band[0];
+    const bandI = stacked ? [band[0] + span * 0.55, band[1]] : band, bandE = stacked ? [band[0], band[0] + span * 0.22] : band;
+    fam.stacked = stacked; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
+    fam.iY = bandI[1] + baseR * 1.6; fam.eY = bandE[1] + (stacked ? wE * 0.3 + 0.02 : baseR * 1.6);   // just over the family's highest blob
     let n = 0;
     lanes.concat(econ).forEach((L, i) => {
-      const isE = i >= 4, w = isE ? laneW * EW : laneW;
-      const cx = isE ? (4 + GAP) * laneW + (i - 4 + 0.5) * w : (i + 0.5) * laneW;
+      const isE = i >= 4, w = isE ? wE : laneW, bd = isE ? bandE : bandI;
+      const cx = isE ? x0E + (i - 4 + 0.5) * w : (i + 0.5) * laneW;
       let low = Infinity;
-      const cy = band[0] + L.h * (band[1] - band[0]);
+      const cy = bd[0] + L.h * (bd[1] - bd[0]);
       const amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
       L.drops.forEach((d, k) => {
         const core = k === 0;
@@ -591,11 +606,12 @@
         // they break away and rejoin. A steady index stays whole, a choppy one comes apart.
         const brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));   // break-away clock shared: equal chop, equal spread
-        const R = isE ? Math.min(baseR * L.sz * EW, w * 0.3) : baseR * L.sz;   // an economy blob never outgrows its narrow lane   // offsets scale with the blob, so phone and desktop look alike
+        const R = isE ? Math.min(baseR * L.sz * EW, w * 0.3) : baseR * L.sz;   // an economy blob never outgrows its narrow lane; offsets scale with the blob
         const r = R * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? w * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
-        const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, band[0], band[1]);
+        const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
+        if (core) { L.hx = x; L.hy = y; L.hitR = isE ? Math.max(r * 1.5, w * 0.45) : r * 1.5; }   // tap target: a small economy blob gets its lane's width
         low = Math.min(low, y - r * 1.1);
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
@@ -642,18 +658,29 @@
       econ.forEach(g => { const a = document.createElement("span"); a.textContent = g.short; a.className = "door econ";
         a.title = "Look inside " + g.name; a.onclick = () => { location.href = "economy.html#g=" + g.key; }; tags.appendChild(a); });
     }
-    lanes.concat(econ).forEach((L, i) => { if (L.tagX == null) return; const s = tags.children[i];
-      const half = s.offsetWidth / 2 / innerWidth;   // a label never runs off either edge of the screen
-      s.style.left = (clampN(L.tagX, half + 0.01, 1 - half - 0.01) * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%";
-      s.style.visibility = "visible"; });
-    // economy labels sit close together: one that would touch the label before it drops a line
-    let prev = null;
-    for (const s of [...tags.children].slice(data.indexes.length)) {
-      const r = s.getBoundingClientRect();
-      if (prev && r.left < prev.right + 4 && r.right > prev.left - 4 && r.top < prev.bottom + 2 && r.bottom > prev.top - 2)
-        s.style.bottom = Math.max(0, innerHeight - prev.bottom - r.height - 2) + "px";   // sit just under the label before it
-      prev = s.getBoundingClientRect();
-    }
+    // labels in one pass: read every width, then write every position (no read-after-write reflow per label).
+    // A label never runs off either screen edge; an economy label that would touch any label already placed
+    // drops below it, never under the bottom of the screen.
+    const all = lanes.concat(econ), els = [...tags.children], W_ = innerWidth, H_ = innerHeight;
+    const boxes = all.map((L, i) => { const s = els[i]; if (!s || L.tagX == null) return null;
+      const w = s.offsetWidth, h = s.offsetHeight || 14, half = w / 2 / W_;
+      const x = clampN(L.tagX, half + 0.01, 1 - half - 0.01) * W_;
+      return { s, l: x - w / 2, r: x + w / 2, h, b: Math.max(0, L.tagY) * H_, x }; });
+    const placed = [];
+    boxes.forEach((B, i) => { if (!B) return;
+      if (i >= 4) for (let guard = 0; guard < 8; guard++) {
+        const hit = placed.find(P => B.l < P.r + 4 && B.r > P.l - 4 && B.b < P.b + P.h + 2 && B.b + B.h > P.b - 2);
+        if (!hit) break; B.b = Math.max(0, hit.b - B.h - 2);
+        if (B.b === 0) break;
+      }
+      placed.push(B); });
+    for (const B of boxes) if (B) { B.s.style.left = (B.x / W_ * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible"; }
+    // the two family captions (Stocks / Economy): above each family on a wide screen, at the left of each row on a phone
+    const fm = $("fam");
+    if (fm) { fm.hidden = !econ.length; fm.classList.toggle("stacked", !!fam.stacked);
+      const [cs, ce] = fm.children;
+      cs.style.left = fam.stacked ? "16px" : (fam.iX * 100).toFixed(2) + "%"; cs.style.bottom = (fam.iY * 100).toFixed(2) + "%";
+      ce.style.left = fam.stacked ? "16px" : (fam.eX * 100).toFixed(2) + "%"; ce.style.bottom = (fam.eY * 100).toFixed(2) + "%"; }
     $("moodWord").textContent = Mood.moodWord(avgPctShown);
     $("moodWord").style.color = hex(Mood.colour(avgPctShown).map(v => v * 0.35 + 0.65));
     $("moodSub").textContent = "Average move " + fmtPct(avgPctShown);
@@ -1130,8 +1157,7 @@
       const b = i * DROPS * 3;
       return Math.hypot(e.clientX - balls[b] * H, e.clientY - (H - balls[b + 1] * H)) < balls[b + 2] * H * 1.5;
     });
-    const eHit = !hit && econ.find((g, j) => { const b = (4 + j) * DROPS * 3;
-      return balls[b + 2] > 0 && Math.hypot(e.clientX - balls[b] * H, e.clientY - (H - balls[b + 1] * H)) < balls[b + 2] * H * 1.5; });
+    const eHit = !hit && econ.find(g => g.hitR != null && Math.hypot(e.clientX - g.hx * H, e.clientY - (H - g.hy * H)) < g.hitR * H);
     if (hit) openCell(hit.key);
     else if (eHit) location.href = "economy.html#g=" + eHit.key;
     else document.body.classList.toggle("bare");
@@ -1153,6 +1179,7 @@
   }
   load();
   setInterval(load, REFRESH_MS);
+  setInterval(loadEcon, REFRESH_MS);   // economy.json has its own cron: refresh it even when market.json has not changed
   requestAnimationFrame(frame);
   if (/(^#|&)help(&|$)/.test(location.hash)) openHelp();   // #help: for browser-check.sh only
   window.__mm = { get mode() { return mode; }, get pos() { return pos; }, lanes, get data() { return data; }, gl: !!gl,

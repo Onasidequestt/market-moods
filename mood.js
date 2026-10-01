@@ -170,9 +170,11 @@
     if (kind === "bp") { const d = (last - prev) * 100; return { raw: d, pct: d / 10, text: signed(d, 0, " bp") }; }
     if (kind === "pt") { const d = last - prev; return { raw: d, pct: d * 10, text: signed(d, 1, " pt") }; }
     if (kind === "jobs") { const d = last - prev; return { raw: d, pct: d / 150, text: signed(d, 0, "k jobs") }; }
-    // ponytail: a $5 bn swing counts as 1% (a scale like payrolls' 150k); the trade balance is negative, so a
+    // ponytail: a $20 bn swing counts as 1% (about a routine month's change; a scale like payrolls' 150k); the trade balance is negative, so a
     // percent change would flip its meaning. Input in $ million (FRED BOPGSTB). Upgrade: scale by its own spread.
-    if (kind === "bn") { const d = (last - prev) / 1000; return { raw: d, pct: d / 5, text: (d > 0 ? "+$" : d < 0 ? MINUS + "$" : "$") + Math.abs(+d.toFixed(1)).toFixed(1) + " bn" }; }
+    //   gdp = change of a share of GDP in points; 1 pt counts as 1% (world government debt, yearly)
+    if (kind === "gdp") { const d = last - prev; return { raw: d, pct: d, text: signed(d, 1, " pt of GDP") }; }
+    if (kind === "bn") { const d = (last - prev) / 1000; return { raw: d, pct: d / 20, text: (d > 0 ? "+$" : d < 0 ? MINUS + "$" : "$") + Math.abs(+d.toFixed(1)).toFixed(1) + " bn" }; }
     return null;
   }
   // slow = a weekly or monthly release: no last hour to be choppy in, and it never moves between releases
