@@ -51,6 +51,7 @@
   .tags { position: fixed; inset: 0; pointer-events: none; }
   .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink-2); white-space: nowrap; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); pointer-events: auto; cursor: pointer; }
+  @media (max-width: 480px) { .tags span { font-size: 10px; letter-spacing: .03em; } }   /* 7 labels share 390px */
   .tip { position: fixed; z-index: 2; pointer-events: none; background: rgba(18, 11, 24, .92); border: 1px solid var(--line);
     border-radius: 12px; padding: 8px 11px; font-size: 12.5px; color: var(--ink-2); max-width: 260px;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 8px 30px rgba(0, 0, 0, .5); }
@@ -207,7 +208,7 @@
       if (d.missing && d.missing.length) $("srcMissing").textContent = "Not shown, and why: " + d.missing.map(x => `${x.name} (${x.why})`).join("; ") + ".";
       $("src").textContent = `Data: ${d.source}. Last fetched ${new Date(d.generated_at * 1000).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" })} ET.`;
       if (first && wantG && G.some(g => g.key === wantG)) openCell(wantG);
-      step(0); ui(); if (gl && !inCell) draw();   // the lamp shows at once, not after the first slow frames
+      step(0); if (gl && !inCell) draw(); ui();   // the lamp shows at once, not after the first slow frames; draw first so the labels have a place
     } catch (e) {
       if (!data) {
         setStatus("error", "Economy data unavailable");
@@ -504,6 +505,16 @@
     lanes.forEach((L, i) => { if (L.tagX == null || !tags.children[i]) return; const s = tags.children[i];
       const half = ws[i] / 2 / innerWidth, g = 24 / innerWidth;   // a 24px gutter: no label runs to the screen edge
       s.style.left = (Math.min(1 - half - g, Math.max(half + g, L.tagX)) * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%"; s.style.visibility = "visible"; });
+    // a label that would touch one already placed drops below it (narrow phones: 7 labels in 390px)
+    const placed = [];
+    for (const s of tags.children) { if (s.style.visibility !== "visible") continue;
+      let r = s.getBoundingClientRect();
+      for (let k = 0; k < 6; k++) {
+        const hit = placed.find(P => r.left < P.right + 4 && r.right > P.left - 4 && r.top < P.bottom + 2 && r.bottom > P.top - 2);
+        if (!hit) break;
+        s.style.bottom = Math.max(0, innerHeight - hit.bottom - r.height - 2) + "px"; r = s.getBoundingClientRect();
+      }
+      placed.push(r); }
     // the biggest single mover among market-traded members, said in words: real data, never a slogan
     const fast = G.flatMap(g => g.members.filter(m => !Mood.econSlow(m)));
     const big = fast.slice().sort((a, b) => Math.abs(b.mv.pct) - Math.abs(a.mv.pct))[0];

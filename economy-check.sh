@@ -48,6 +48,8 @@ const fmt = p => (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(2) + "%";
 for (const SIZE of ["390,844", "1440,900"]) {
   const L = dom("lamp_" + SIZE), tag = SIZE.startsWith("390") ? "phone" : "desktop";
   ok(attr(L, /data-drops="(\d+)"/) == e.groups.length * 5, `${tag}: ${e.groups.length} blobs x 5 drops of wax drawn (${attr(L, /data-drops="(\d+)"/)})`);
+  const tagSpans = (/<div class="tags"[^>]*>([\s\S]*?)<\/div>/.exec(L) || [, ""])[1].match(/<span[^>]*>/g) || [];
+  ok(tagSpans.length === e.groups.length && tagSpans.every(t => /left:/.test(t) && /visibility: visible/.test(t)), `${tag}: every group label is placed and shown on first paint (${tagSpans.filter(t => /left:/.test(t)).length}/${e.groups.length})`);
   ok(/data-pill="(Delayed|Closed) /.test(L), `${tag}: the pill says delayed or closed (${attr(L, /data-pill="([^"]*)"/)})`);
   const cards = [...L.matchAll(/<button[^>]*class="card" data-g="(\w+)"[\s\S]*?<div class="pct num"[^>]*>([^<]*)<\/div><div class="lvl">([^<]*)<\/div>/g)];
   ok(cards.length === e.groups.length, `${tag}: one card per group (${cards.length})`);
