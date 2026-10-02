@@ -709,7 +709,7 @@
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
       });
-      L.tagX = cx / aspect; L.tagY = isE && stacked ? bandE[0] - Math.min(wE * 0.36, baseR * 1.4 * 0.75) - 0.045 : low - 0.035;   // under the blob; a phone's economy row shares one baseline
+      L.tagX = cx / aspect; L.tagY = isE && stacked ? bandE[0] - Math.min(wE * 0.36, baseR * 1.4 * 0.75) - 0.022 : low - 0.035;   // 0.022: the label hugs the row (panel: "labels closer to blobs")   // under the blob; a phone's economy row shares one baseline
       top[isE ? 1 : 0] = Math.max(top[isE ? 1 : 0], L.hy + (L.hitR || 0) / 1.5);
     });
     // captions glide with small bobs and snap on a first sight or a big change (data just arrived)

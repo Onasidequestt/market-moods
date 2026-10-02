@@ -76,6 +76,11 @@
   .panel .pLook:hover, .panel .pClose:hover { border-color: rgba(244, 236, 247, .32); }
   .panel [hidden] { display: none; }
   @media (max-width: 699px) {
+    /* a phone inside a 16-member group: the footer (note + members) must not eat the stage, so it scrolls within
+       its lower half and the "not shown" note clamps to three lines (tap it for the rest) */
+    body.incell footer { max-height: 46vh; max-height: 46dvh; overflow-y: auto; }
+    body.incell .notice { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+    body.incell .notice.full { -webkit-line-clamp: unset; display: block; }
     .panel { top: auto; left: 0; width: auto; max-height: 60vh; max-height: 60dvh; border-left: 0; border-top: 1px solid var(--line);
       border-radius: 18px 18px 0 0; box-shadow: 0 -10px 40px rgba(0, 0, 0, .45); transform: translateY(100%); }
     .panel.open { transform: none; }
@@ -113,7 +118,7 @@
     .readouts { gap: 5px; }
     .card { padding: 8px 5px 9px; border-radius: 12px; }
     .card .pct { font-size: 14px; }
-    .card .name { font-size: 10px; gap: 3px; }
+    .card .name { font-size: 10px; gap: 3px; white-space: normal; line-height: 1.15; }   /* "Central banks" wraps, never "Central ba…" */
     .card .chip { width: 7px; height: 7px; }
     .card .lvl { font-size: 9.5px; }
     .card .look { display: none; }
@@ -556,7 +561,7 @@
     const miss = ((data && data.missing) || []).filter(x => x.group === g.key);
     const nt = $("notice");
     nt.textContent = miss.length ? "Not shown: " + miss.map(x => `${x.name} (${x.why})`).join("; ") + "." : "";
-    nt.classList.toggle("on", !!miss.length);
+    nt.classList.toggle("on", !!miss.length); nt.classList.remove("full"); nt.onclick = () => nt.classList.toggle("full");
   }
   function openCell(key) {
     if (!G.some(g => g.key === key)) return false;

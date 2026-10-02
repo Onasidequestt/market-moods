@@ -8,6 +8,7 @@
 # LOOP_FORCE=1 (manual test): two short rounds even when closed, no chaining. LOOP_FORCE=chain: one round, then really
 # start the next link (proves the dispatch permission; the next link sees a closed market and stops).
 wf="$1"; period="$2"; when="$3"; shift 3
+case "$when" in market|econ) ;; *) echo "::error::loop.sh: mode must be market or econ, got '$when'"; exit 2;; esac
 end=$(( $(date +%s) + 3000 ))     # one link lasts ~50 min (job cap is 6 h; a gap between links is seconds)
 n=0
 while :; do

@@ -23,7 +23,7 @@ company's move from its previous official close, in basis points (0.01%), on tha
 
 usage: fetch.py [--out data/market.json] | fetch.py --companies | fetch.py --selfcheck
 """
-import csv, html, http.cookiejar, io, json, pathlib, re, ssl, sys, time, urllib.error, urllib.request
+import csv, html, http.cookiejar, io, json, pathlib, re, ssl, sys, time, urllib.error, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -394,9 +394,9 @@ ECON = [
         ("tradeGE", "US trade balance with Germany", "t", "EXPGE:IMPGE", "bn", "$ million / month", "monthly"),
         ("tradeFR", "US trade balance with France", "t", "EXPFR:IMPFR", "bn", "$ million / month", "monthly")]),
     ("cbanks", "Central banks", "Central banks", [
-        ("fedAssets", "Fed holdings (balance sheet)", "f", "WALCL", "pct", "$ million held", "weekly"),
-        ("ecbAssets", "ECB holdings (balance sheet)", "f", "ECBASSETSW", "pct", "\u20ac million held", "weekly"),
-        ("bojAssets", "Bank of Japan holdings (balance sheet)", "f", "JPNASSETS", "pct", "\u00a5 100 million held", "monthly"),
+        ("fedAssets", "Fed holdings (balance sheet)", "f", "WALCL", "pct", "$ trillion held", "weekly"),
+        ("ecbAssets", "ECB holdings (balance sheet)", "f", "ECBASSETSW", "pct", "\u20ac trillion held", "weekly"),
+        ("bojAssets", "Bank of Japan holdings (balance sheet)", "f", "JPNASSETS", "pct", "\u00a5 trillion held", "monthly"),
         ("boeAssets", "Bank of England holdings (balance sheet)", "m", "bis:GB", "pct", "\u00a3 billion held", "quarterly"),
         ("pbocAssets", "People's Bank of China holdings (balance sheet)", "m", "bis:CN", "pct", "\u00a5 billion held", "quarterly"),
         ("snbAssets", "Swiss National Bank holdings (balance sheet)", "m", "bis:CH", "pct", "CHF billion held", "quarterly"),
@@ -411,12 +411,14 @@ ECON = [
         ("fxReserves", "World FX reserves (all central banks)", "m", "cofer:CI_T:NV_USD", "pct", "$ trillion", "quarterly"),
         ("usdShare", "US dollar share of FX reserves", "m", "cofer:CI_USD:SHRO_PT", "pct", "% of allocated reserves", "quarterly")]),
 ]
+# a feed's raw unit divided into the unit the page names (FRED: WALCL/ECBASSETSW in millions, JPNASSETS in 100 millions)
+ECON_SCALE = {"fedAssets": 1e6, "ecbAssets": 1e6, "bojAssets": 1e4}
 # things Clark asked for that no free keyless source carries: listed on the page, never faked
 ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls": "Payrolls", "claims": "Claims",
               "sentiment": "Sentiment", "retail": "Retail", "spending": "Spending", "homes": "Homes", "dollar": "Dollar", "t3m": "3-month", "t5y": "5-year",
               "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
               "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI", "credit": "Credit", "cards": "Cards", "fedDebt": "Fed. debt",
-              "m1": "M1", "railCars": "Rail cars", "railBox": "Intermodal", "tsi": "Freight idx", "truckTons": "Tonnage", "imports": "Imports $", "exports": "Exports $", "tradeCH": "China", "tradeCA": "Canada", "tradeMX": "Mexico", "tradeJP": "Japan", "tradeKR": "S. Korea", "tradeUK": "UK", "tradeGE": "Germany", "tradeFR": "France", "goldUSA": "US", "goldDEU": "Germany", "goldITA": "Italy", "goldFRA": "France", "goldCHN": "China", "goldIND": "India", "goldPOL": "Poland", "goldTUR": "Turkey", "boeAssets": "BoE", "pbocAssets": "PBoC", "snbAssets": "SNB", "fxReserves": "FX reserves", "usdShare": "USD share",  "fedAssets": "Fed", "ecbAssets": "ECB", "bojAssets": "BoJ", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
+              "m1": "M1", "railCars": "Rail cars", "railBox": "Intermodal", "tsi": "Freight idx", "truckTons": "Tonnage", "imports": "Import prices", "exports": "Export prices", "tradeCH": "China trade", "tradeCA": "Canada trade", "tradeMX": "Mexico trade", "tradeJP": "Japan trade", "tradeKR": "Korea trade", "tradeUK": "UK trade", "tradeGE": "Germany trade", "tradeFR": "France trade", "goldUSA": "US gold", "goldDEU": "German gold", "goldITA": "Italian gold", "goldFRA": "French gold", "goldCHN": "China gold", "goldIND": "India gold", "goldPOL": "Polish gold", "goldTUR": "Turkish gold", "boeAssets": "BoE", "pbocAssets": "PBoC", "snbAssets": "SNB", "fxReserves": "FX reserves", "usdShare": "USD share",  "fedAssets": "Fed", "ecbAssets": "ECB", "bojAssets": "BoJ", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
               "trucking": "Trucking", "feeder": "Feeder", "oj": "OJ", "cattle": "Cattle", "rice": "Rice", "hogs": "Hogs"}     # a blob's label; the full name rides in the tooltip
 ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)"),
                 ("energy", "Propane", "Yahoo lists Mont Belvieu propane (B0=F) but it printed once in 5 days: too thin for a move"),
@@ -424,8 +426,8 @@ ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastm
                 ("shipping", "Baltic Dry Index", "licensed by the Baltic Exchange; no free feed (Cass freight indexes stand in)"),
                 ("shipping", "UPS / FedEx rates", "published as rate cards, not a data feed"),
                 ("shipping", "Trade between other country pairs", "only pairs with the US come free (FRED, from the Census); other pairs need a Census/UN key or are over a year old"),
-                ("cbanks", "Reserves reported by Russia and a few others", "not every central bank reports every month to the IMF: Russia's last gold report is months old, so it is left out rather than shown stale"),
-                ("cbanks", "Central-bank crypto holdings", "no central bank reports holding any; the only figures are one-off third-party estimates of government wallets (CoinGecko lists China ~190,000 BTC, Bhutan ~10,800) with no history to measure a move from")]
+                ("cbanks", "Russia's reserves", "Russia reports its gold and reserves to the IMF months late, so its figure is left out rather than shown as this month's"),
+                ("cbanks", "Central-bank crypto holdings", "no central bank publishes a crypto reserve series; the only figures are one-off third-party estimates of government wallets, with no history to measure a move from")]
 
 def parse_fred(text):
     """[(date 'YYYY-MM-DD', value)] from a fredgraph.csv; FRED's '.' (no reading) rows are dropped."""
@@ -508,16 +510,21 @@ def get_imf(spec):
 # swapped file is the only risk; every value is range-checked (check.js) and the page names the source. Upgrade: pin the
 # IMF intermediate cert, or fetch via DBnomics' mirror (a year behind).
 _csv_cache = {}
+UNVERIFIED_OK = {"api.imf.org"}      # the ONE host with the broken chain; everything else must verify
 def get_csv(url, accept="text/csv"):
-    if url in _csv_cache: return _csv_cache[url]
+    if url in _csv_cache:               # a failure is cached too: one outage costs one retry set per round, not one per member
+        if isinstance(_csv_cache[url], Exception): raise _csv_cache[url]
+        return _csv_cache[url]
+    host = urllib.parse.urlparse(url).hostname
     def call():
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 market-moods", "Accept": accept})
         try: r = urllib.request.urlopen(req, timeout=60)
         except urllib.error.URLError as e:
-            if not isinstance(e.reason, ssl.SSLCertVerificationError): raise
+            if host not in UNVERIFIED_OK or not isinstance(e.reason, ssl.SSLCertVerificationError): raise
             r = urllib.request.urlopen(req, timeout=60, context=ssl._create_unverified_context())
         with r: return list(csv.DictReader(io.StringIO(r.read().decode("utf-8-sig"))))
-    _csv_cache[url] = _retry(call)
+    try: _csv_cache[url] = _retry(call)
+    except Exception as e: _csv_cache[url] = e; raise
     return _csv_cache[url]
 
 OZ_PER_TONNE = 32150.7466
@@ -589,7 +596,8 @@ def build_economy(prev=None):
                 elif spec[2] == "t":
                     mem.append(econ_fred(spec, get_trade(spec[3]), "FRED (Census data): exports minus imports, " + spec[3]))
                 else:
-                    mem.append(econ_fred(spec, get_fred(spec[3])))
+                    rows_ = get_fred(spec[3]); d_ = ECON_SCALE.get(spec[0])
+                    mem.append(econ_fred(spec, [(t, v / d_) for t, v in rows_] if d_ else rows_))
             except Exception as e:      # one dead series never blocks the rest, and is never faked
                 print(f"economy {spec[1]} failed: {e}", file=sys.stderr)
                 if spec[0] in old:      # keep its last real reading: it still carries its own as-of date, so the page
@@ -680,6 +688,9 @@ def selfcheck():
     imf = {"values": {"D": {"W": {"2023": 90.8, "2024": 92, "2025": 93.9, "2026": 95.3, "2027": 97.2}}}}
     assert parse_imf(imf, "D", "W", 2026) == [("2023-01-01", 90.8), ("2024-01-01", 92.0), ("2025-01-01", 93.9)]
     # every ECON spec has a known source and rhythm (a typo'd "q" would silently land in the FRED branch)
+    specs = {s[0]: s for _, _, _, sp in ECON for s in sp}
+    assert all(k in specs and "trillion" in specs[k][5] for k in ECON_SCALE), "every scaled series names its scaled unit"
+    assert urllib.parse.urlparse(IMF_SDMX).hostname in UNVERIFIED_OK and "stats.bis.org" not in UNVERIFIED_OK
     assert all(s[2] in "yfimt" and s[6] in ("5min", "weekly", "monthly", "quarterly", "yearly") for _, _, _, sp in ECON for s in sp)
     # economy: parse_fred drops '.' rows; a member is last-vs-the-close-before, dated by its own reading
     rows = parse_fred("observation_date,X\n2026-06-01,10\n2026-07-01,.\n2026-08-01,12.5\n")
@@ -735,6 +746,8 @@ if __name__ == "__main__":
         sys.exit(0 if market_open() else 1)
     if "--econ-open" in sys.argv:
         sys.exit(0 if econ_open() else 1)
+    if any(a.startswith("--") and a.endswith("-open") for a in sys.argv):    # a typo'd mode must not fall through to a full fetch
+        print(f"fetch.py: unknown mode {sys.argv[1:]} (market-open | econ-open)", file=sys.stderr); sys.exit(2)
     if "--companies" in sys.argv:
         here = pathlib.Path(__file__).parent / "data"
         i = sys.argv.index("--companies")
