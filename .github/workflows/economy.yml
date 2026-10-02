@@ -1,4 +1,4 @@
-# Refresh data/economy.json (commodities, Treasury rates, macro numbers) on its own cron, so it never
+# Refresh data/economy.json (commodities, Treasury rates, macro numbers) on its own clock, so it never
 # queues behind the index fetch or the companies fetch. Prices come from Yahoo (futures trade almost
 # around the clock, Sunday evening to Friday evening), the slow numbers from FRED's public CSV; a
 # series that fails keeps its last real reading with its own date (see build_economy), never a guess.
@@ -6,31 +6,29 @@
 # Ceiling: GitHub cron is best-effort (5-20 min late) and FRED's CSV door could start blocking
 # datacenter IPs (it already drops browser-like User-Agents). Upgrade path: FRED's keyed API, and a
 # fetcher on the client's own host.
+#
+# 2026-10-01: GitHub's schedule trigger fired ~5 of ~96 times a day, so the cron only bootstraps a chain
+# (tools/loop.sh: a round every 15 min for ~50 min, then it starts the next link itself).
 name: fetch economy data
 on:
   schedule:
-    - cron: "*/15 * * * 0-5"
+    - cron: "11,26,41,56 * * * 0-5"
   workflow_dispatch:
+    inputs: { force: { description: "test: two rounds, no chaining", required: false } }
 permissions:
   contents: write
+  actions: write
 concurrency: { group: economy, cancel-in-progress: false }
 jobs:
   economy:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
-      - run: python3 fetch.py --selfcheck && python3 fetch.py --economy
-      - run: node check.js --fresh
-      - run: |
-          git diff --quiet data/economy.json && { echo "no change"; exit 0; }
-          git config user.name "market-moods bot"
-          git config user.email "actions@users.noreply.github.com"
-          # pull first: the index and companies workflows commit to the same branch on their own crons
-          git pull --rebase --autostash
-          git add data/economy.json
-          git commit -m "data: economy $(date -u +%FT%TZ)"
-          git push
+      - run: python3 fetch.py --selfcheck
+      - run: tools/loop.sh economy.yml 900 always tools/economy_round.sh
+        env: { GH_TOKEN: "${{ github.token }}", LOOP_FORCE: "${{ github.event.inputs.force }}" }

@@ -8,14 +8,20 @@
 # workflow (companies.yml) on its own cron — see that file for why. This workflow only ever
 # touches data/market.json, so it stays fast (~20-30s measured) and never risks missing its
 # 10-minute slot because a companies fetch ran long.
+#
+# 2026-10-01 (Clark: "still stale"): the schedule trigger fired ~3 times a weekday, not 49 - GitHub
+# throttles it. So the cron below only BOOTSTRAPS: tools/loop.sh then runs a round every 10 minutes
+# for ~50 min and starts the next link itself (see that file). Odd minutes: :00/:10 are the busiest slots.
 name: fetch market data
 on:
   schedule:
-    - cron: "*/10 13-20 * * 1-5"   # 13:00-20:59 UTC covers 9:30-16:00 ET in both EDT and EST
-    - cron: "20 21 * * 1-5"        # after the close, so replay always has the full day
+    - cron: "3,13,23,33,43,53 13-20 * * 1-5"   # 13:00-20:59 UTC covers 9:30-16:00 ET in both EDT and EST
+    - cron: "17 21 * * 1-5"        # after the close, so replay always has the full day
   workflow_dispatch:
+    inputs: { force: { description: "test: two rounds even if closed, no chaining", required: false } }
 permissions:
   contents: write
+  actions: write
 concurrency: { group: fetch, cancel-in-progress: false }
 jobs:
   fetch:
@@ -26,14 +32,6 @@ jobs:
         with: { python-version: "3.12" }
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
-      - run: python3 fetch.py --selfcheck && python3 fetch.py
-      - run: node check.js
-      - run: |
-          git diff --quiet data/market.json && { echo "no change"; exit 0; }
-          git config user.name "market-moods bot"
-          git config user.email "actions@users.noreply.github.com"
-          # pull first: the companies workflow commits to the same branch on its own cron
-          git pull --rebase --autostash
-          git add data/market.json
-          git commit -m "data: $(date -u +%FT%TZ)"
-          git push
+      - run: python3 fetch.py --selfcheck
+      - run: tools/loop.sh fetch.yml 600 market tools/market_round.sh
+        env: { GH_TOKEN: "${{ github.token }}", LOOP_FORCE: "${{ github.event.inputs.force }}" }

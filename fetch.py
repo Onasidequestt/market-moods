@@ -251,7 +251,7 @@ def shape_companies(members, caps_, sessions, intraday, daily, index="sp500"):
     closes = {s: {day(t): c for t, c in daily.get(s, [])} for s, _, _ in ms}
     out = []
     for k, S in enumerate(sessions):
-        grid = [t for t, _ in S["bars"]]
+        grid = [b[0] for b in S["bars"]]   # a bar is [unix, close, volume|null] (volume added 09-30; a 2-tuple unpack here froze every companies file)
         if k: before = sessions[k - 1]["date"]
         else:   # the first day's "day before" = the latest earlier date most members have
             last = [max([d for d in cl if d < S["date"]], default=None) for cl in closes.values()]
@@ -282,6 +282,12 @@ SOURCE_NOTE = {
 }
 # rough floor for "did pricing actually work" per index, scaled off INDEX_CAP (rule 2: a check that can verify)
 MIN_PRICED = {"dow": 27, "sp500": 450, "nasdaq": 400, "russell": 400}
+
+def market_open(now=None):
+    """Pure: is NYSE in its regular session (Mon-Fri 9:30-16:05 ET; 5 min grace for the last bar)?
+    ponytail: holidays are not modelled - on one the loop just refetches an unchanged file and commits nothing."""
+    n = (now or datetime.now(ET)).astimezone(ET)
+    return n.weekday() < 5 and (9, 30) <= (n.hour, n.minute) <= (16, 5)
 
 def build_companies(market, index="sp500"):
     ix = next(i for i in market["indexes"] if i["key"] == index)
@@ -508,8 +514,11 @@ def selfcheck():
     d22 = int(datetime(2026, 9, 22, 11, 0, tzinfo=ET).timestamp())
     s2 = shape("sp500", "S&P 500", "^GSPC", {"timestamp": [d22, t0], "indicators": {"quote": [{"close": [97.0, 101.0]}]}}, daily)
     assert [x["date"] for x in s2["sessions"]] == ["2026-09-25"], s2["sessions"]
+    mo = lambda *a: market_open(datetime(*a, tzinfo=ET))
+    assert mo(2026, 10, 1, 9, 30) and mo(2026, 10, 1, 16, 5) and not mo(2026, 10, 1, 9, 29) \
+        and not mo(2026, 10, 1, 16, 6) and not mo(2026, 10, 3, 11, 0), "market_open window"   # Sat closed
     # companies: two members, one day on the index's clock [t0, t0+300, t0+600]
-    sess = [{"date": "2026-09-25", "bars": [[t0, 1.0], [t0 + 300, 1.0], [t0 + 600, 1.0]]}]
+    sess = [{"date": "2026-09-25", "bars": [[t0, 1.0, 100], [t0 + 300, 1.0, None], [t0 + 600, 1.0, 5]]}]   # the REAL bar shape: [t, close, volume]
     daily_c = {"AAA": [(d24, 200.0), (t0, 999.0)], "BBB": [(d24, 50.0)], "CCC": [(d24, 10.0)]}
     intr_c = {"AAA": [(d24, 190.0), (t0, 202.0), (t0 + 600, 198.0)],   # t0+300 missing: carried forward
               "BBB": [(t0, 50.0), (t0 + 300, 51.0)], "CCC": [(d24, 10.0)]}   # BBB's last bar missing: 51 carried
@@ -524,7 +533,7 @@ def selfcheck():
     # a gap in the daily series: EEE has no 09-24 close, only 09-23's. It is left out, not measured
     # from the older close (the MOS bug); on day 2 its 09-25 close is present again and it is back.
     d23 = d24 - 86400
-    sess2 = sess + [{"date": "2026-09-28", "bars": [[t0 + 3 * 86400, 1.0]]}]
+    sess2 = sess + [{"date": "2026-09-28", "bars": [[t0 + 3 * 86400, 1.0, None]]}]
     c2 = shape_companies([("AAA", "Ay", "Y"), ("EEE", "Ee", "Y")], {"AAA": 2e12, "EEE": 1e9}, sess2,
                          {"AAA": intr_c["AAA"] + [(t0 + 3 * 86400, 200.0)], "EEE": [(t0, 30.0), (t0 + 3 * 86400, 33.0)]},
                          {"AAA": [(d24, 200.0), (t0, 199.0)], "EEE": [(d23, 20.0), (t0, 30.0)]})
@@ -597,6 +606,8 @@ if __name__ == "__main__":
         n = sum(len(g["members"]) for g in data["groups"])
         print(f'economy: {n} series live in {len(data["groups"])} groups, {len(data["missing"])} not live -> data/economy.json')
         sys.exit(0)
+    if "--market-open" in sys.argv:
+        sys.exit(0 if market_open() else 1)
     if "--companies" in sys.argv:
         here = pathlib.Path(__file__).parent / "data"
         i = sys.argv.index("--companies")

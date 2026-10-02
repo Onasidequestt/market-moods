@@ -14,39 +14,32 @@
 # the roster's one-time cost (the HTTP calls in ROSTERS[key](), which is most of Nasdaq's ~5.5 min)
 # into a once-daily cost, leaving only per-symbol price calls (caps()/spark()) on the 15-min cycle.
 # A full run (all four) measured ~8-9 min, so 15 leaves ~6 min of slack; a late start queues, never overlaps.
+#
+# 2026-10-01 (Clark: "still stale"): two causes. (1) fetch.py crashed on every run since the volume
+# heartbeat widened bars to [t, close, volume]; the `|| echo ::warning` below swallowed it, so runs were
+# green while data/companies*.json froze at 09-30 17:07Z. Now a failed index fails the run (after the good
+# ones are committed). (2) GitHub's schedule trigger fired ~3 of ~33 times; the cron only bootstraps a chain
+# (tools/loop.sh: one round per 15 min for ~50 min, then it starts the next link itself).
 name: fetch index companies
 on:
   schedule:
-    - cron: "5,20,35,50 13-20 * * 1-5"   # every 15 min (mm20, 09-30; was 30), offset from fetch.yml's :00/:10/... slots
-    - cron: "25 21 * * 1-5"        # once after the close
+    - cron: "7,22,37,52 13-20 * * 1-5"   # every 15 min (mm20), odd minutes (busiest cron slots are :00/:10/:15)
+    - cron: "27 21 * * 1-5"        # once after the close
   workflow_dispatch:
+    inputs: { force: { description: "test: two rounds even if closed, no chaining", required: false } }
 permissions:
   contents: write
+  actions: write
 concurrency: { group: companies, cancel-in-progress: false }
 jobs:
   companies:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
-      # each index is a separate, isolated source: if one fails the last good file for THAT index
-      # stays and the others still ship (the page says how far behind it is) — unchanged from
-      # when these lived in fetch.yml.
-      - run: python3 fetch.py --companies sp500 || echo "::warning::sp500 company fetch failed; keeping the last companies.json"
-      - run: python3 fetch.py --companies dow || echo "::warning::dow company fetch failed; keeping the last companies-dow.json"
-      - run: python3 fetch.py --companies nasdaq || echo "::warning::nasdaq company fetch failed; keeping the last companies-nasdaq.json"
-      - run: python3 fetch.py --companies russell || echo "::warning::russell company fetch failed (iShares' anti-bot wall has blocked this fetch every time so far, including a real headless-Chromium attempt on 09-28; no companies-russell.json exists yet)"
-      - run: node check.js
-      - run: |
-          git diff --quiet data/companies.json data/companies-dow.json data/companies-nasdaq.json 2>/dev/null && { echo "no change"; exit 0; }
-          git config user.name "market-moods bot"
-          git config user.email "actions@users.noreply.github.com"
-          # pull first: fetch.yml commits data/market.json on its own, faster cron
-          git pull --rebase --autostash
-          git add data/companies.json data/companies-dow.json data/companies-nasdaq.json
-          [ -f data/companies-russell.json ] && git add data/companies-russell.json   # not built yet (see fetch.py's roster_russell)
-          git commit -m "data: companies $(date -u +%FT%TZ)"
-          git push
+      - run: tools/loop.sh companies.yml 900 market tools/companies_round.sh
+        env: { GH_TOKEN: "${{ github.token }}", LOOP_FORCE: "${{ github.event.inputs.force }}" }
