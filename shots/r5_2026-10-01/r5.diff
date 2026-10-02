@@ -1,0 +1,261 @@
+diff --git a/economy-check.sh b/economy-check.sh
+index db452ab..069353c 100644
+--- a/economy-check.sh
++++ b/economy-check.sh
+@@ -11,10 +11,15 @@ cd "$(dirname "$0")" || exit 2
+ B="$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-152.0.7977.42/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+ [ -x "$B" ] || { echo "✘ economy-check: chrome-headless-shell not found"; exit 2; }
+ [ -f data/economy.json ] || { echo "✘ economy-check: data/economy.json missing (run: python3 fetch.py --economy)"; exit 2; }
+-T=$(mktemp -d); mkdir -p "$T/nodata"; cp economy.html mood.js "$T/nodata/"
++T=$(mktemp -d); mkdir -p "$T/nodata" "$T/same/data"; cp economy.html mood.js "$T/nodata/"
++# "same": every economy group makes the SAME big move (eight copies of metals, every member +4%), so on a phone the
++# eight front blobs sit side by side a 49px lane apart (where summed fields bridge neighbours: r3 Energy/Metals fused)
++# and every economy-page blob is as big as it gets, edge lanes included (r3: Central banks clipped at the right edge)
++cp index.html economy.html mood.js "$T/same/"; cp data/market.json data/companies*.json "$T/same/data/"
++node -e 'const e=require("./data/economy.json"), g=e.groups.find(x=>x.key==="metals"); e.groups=[...Array(8)].map((_,i)=>({...g,key:"same"+i,name:"Same "+i,short:"Same "+i,members:g.members.map(m=>({...m,last:m.prev*1.04}))})); process.stdout.write(JSON.stringify(e))' > "$T/same/data/economy.json"
+ python3 -m http.server 8768 --bind 127.0.0.1 >/dev/null 2>&1 & SRV=$!
+-ln -s "$T/nodata" ./.econ-nodata-check 2>/dev/null
+-trap 'kill $SRV 2>/dev/null; rm -rf "$T"; rm -f ./.econ-nodata-check' EXIT
++ln -s "$T/nodata" ./.econ-nodata-check 2>/dev/null; ln -s "$T/same" ./.econ-same-check 2>/dev/null
++trap 'kill $SRV 2>/dev/null; rm -rf "$T"; rm -f ./.econ-nodata-check ./.econ-same-check' EXIT
+ sleep 1
+ shoot() { # $1 size  $2 url  $3 out
+   P=$(mktemp -d)
+@@ -26,11 +31,14 @@ shoot() { # $1 size  $2 url  $3 out
+ }
+ KEYS=$(node -e 'console.log(require("./data/economy.json").groups.map(g=>g.key).join(" "))')
+ for SIZE in 390,844 1440,900; do
+-  shoot $SIZE "http://127.0.0.1:8768/economy.html" "$T/lamp_$SIZE"
++  shoot $SIZE "http://127.0.0.1:8768/economy.html?probe" "$T/lamp_$SIZE"
+   shoot $SIZE "http://127.0.0.1:8768/.econ-nodata-check/economy.html" "$T/no_$SIZE"
+   for K in $KEYS; do shoot $SIZE "http://127.0.0.1:8768/economy.html#g=$K" "$T/g_${K}_$SIZE"; done
+   shoot $SIZE "http://127.0.0.1:8768/index.html" "$T/front_$SIZE"   # mm19: the groups ride on the front page too
++  shoot $SIZE "http://127.0.0.1:8768/.econ-same-check/index.html?probe" "$T/same_$SIZE"
++  shoot $SIZE "http://127.0.0.1:8768/.econ-same-check/economy.html?probe" "$T/samelamp_$SIZE"
+ done
++shoot 390,568 "http://127.0.0.1:8768/.econ-same-check/economy.html?probe" "$T/short"   # r4: a short phone, where two rows would not fit
+ mkdir -p shots/economy; for K in $KEYS; do cp "$T/g_${K}_390,844.png" "shots/economy/${K}_phone.png"; done
+ cp "$T/lamp_390,844.png" shots/economy/lamp_phone.png; cp "$T/lamp_1440,900.png" shots/economy/lamp_desktop.png
+ node - "$T" "$KEYS" <<'EOJ'
+@@ -94,9 +102,22 @@ for (const SIZE of ["390,844", "1440,900"]) {
+   const bOf = x => parseFloat((/bottom: ([\d.]+)px/.exec(x) || [, NaN])[1]);
+   const idxB = sp.filter(x => !/door econ/.test(x)).map(bOf), ecoB = sp.filter(x => /door econ/.test(x)).map(bOf);
+   ok(ecoB.length === e.groups.length && idxB.length >= 3 && Math.max(...ecoB) < Math.min(...idxB), `${tag} front: two rows, every economy label under every index label (economy tops ${Math.max(...ecoB)}px, index bottoms ${Math.min(...idxB)}px)`);
++  // r3 design asks, measured on the page's own geometry (tags data-geo: label l, r, top, bottom | blob bottom, radius | font px)
++  const geo = JSON.parse(dec(attr(F, /data-geo="([^"]*)"/) || "[]")).filter(Boolean);
++  ok(geo.length === e.groups.length, `${tag} front: geometry for every economy label (${geo.length})`);
++  for (const [l, r, top, , blobBot] of geo) ok(top <= blobBot && top >= blobBot - 16, `${tag} front: an economy label hangs right under ITS blob (label top ${top}px, blob bottom ${blobBot}px)`);
++  for (let k = 1; k < geo.length; k++) ok(geo[k][0] >= geo[k - 1][1] || geo[k][3] >= geo[k - 1][2] || geo[k][2] <= geo[k - 1][3], `${tag} front: economy labels ${k - 1}/${k} do not overlap`);
++  if (tag === "phone") ok(geo.every(g => g[5] >= 21.5 && g[6] >= 9), `${tag} front: economy blobs radius >= 22px, labels >= 9px (${geo.map(g => g[5] + "/" + g[6]).join(" ")})`);
++  const Sm = dom("same_" + SIZE), bt = +attr(Sm, /data-bridge-tests="(\d+)"/), bb = +attr(Sm, /data-bridged="(\d+)"/);
++  if (tag === "phone") ok(bt > 0 && bb === 0, `${tag} front: eight equal economy blobs a lane apart never bridge (${bb} of ${bt} close pairs fused)`);
++  if (tag === "phone") ok(+attr(dom("samelamp_" + SIZE), /data-core-r="(\d+)"/) >= 28, `${tag}: at full size every economy blob is >= 28px radius, two rows of four (r3: eight 49px lanes left ~17px blobs) (${attr(dom("samelamp_" + SIZE), /data-core-r="(\d+)"/)}px)`);
++  for (const [Lx, what] of [[L, "today's data"], [dom("samelamp_" + SIZE), "eight biggest blobs"]])
++    ok(+attr(Lx, /data-edge-tests="(\d+)"/) > 0 && attr(Lx, /data-edge-hits="(\d+)"/) === "0", `${tag}: no economy blob is cut by the screen edge, ${what} (${attr(Lx, /data-edge-hits="(\d+)"/)} of ${attr(Lx, /data-edge-tests="(\d+)"/)} frames)`);
+   const N = dom("no_" + SIZE);
+   ok(/Couldn.t load the economy data/.test(N), `${tag}: no data file gives the honest notice`);
+   ok(!/class="card"/.test(N) && !/data-drops=/.test(N), `${tag}: no data file draws no cards and no wax`);
+ }
++const Sh = dom("short");   // a 568px phone: every blob drawn, none cut by an edge (two rows fall back to one when they cannot both move)
++ok(attr(Sh, /data-drops="(\d+)"/) == 40 && +attr(Sh, /data-edge-tests="(\d+)"/) > 0 && attr(Sh, /data-edge-hits="(\d+)"/) === "0", `short phone: 8 blobs drawn, none cut by an edge (${attr(Sh, /data-drops="(\d+)"/)} drops, ${attr(Sh, /data-edge-hits="(\d+)"/)} of ${attr(Sh, /data-edge-tests="(\d+)"/)} frames)`);
+ console.log(`${bad ? "✘" : "✓"} economy-check: ${n} checks, ${bad} failed`); process.exit(bad ? 1 : 0);
+ EOJ
+diff --git a/economy.html b/economy.html
+index 7195b86..b0d2389 100644
+--- a/economy.html
++++ b/economy.html
+@@ -51,7 +51,7 @@
+   .tags { position: fixed; inset: 0; pointer-events: none; }
+   .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+     color: var(--ink-2); white-space: nowrap; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); pointer-events: auto; cursor: pointer; }
+-  @media (max-width: 480px) { .tags span { font-size: 10px; letter-spacing: .03em; } }   /* 7 labels share 390px */
++  @media (max-width: 480px) { .tags span { font-size: 10px; letter-spacing: .03em; } }   /* phone: two rows of four lanes (~97px each) */
+   /* PANEL-CSS: the one details panel (identical block in index.html and economy.html; panel-check.sh compares them) */
+   .panel { position: fixed; z-index: 6; top: 0; right: 0; bottom: 0; width: 360px; max-width: 100%; overflow-y: auto; outline: none;
+     background: rgba(18, 11, 24, .94); border-left: 1px solid var(--line); box-shadow: -10px 0 40px rgba(0, 0, 0, .45);
+@@ -88,7 +88,7 @@
+   footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+   .notice { text-align: center; color: var(--ink-2); font-size: 14px; display: none; margin: 0 0 10px; }
+   .notice.on { display: block; }
+-  .readouts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
++  .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }   /* r4: 8 groups = two full rows, no orphan */
+   .card { background: var(--glass); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; cursor: pointer;
+     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); min-width: 0; color: inherit; font: inherit; text-align: left; }
+   .card .name { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@@ -391,31 +391,52 @@
+     return hi > lo ? [lo, hi] : [(lo + hi) / 2, (lo + hi) / 2];
+   }
+   function draw() {
+-    const W = canvas.width, H = canvas.height, aspect = W / H, laneW = aspect / Math.max(1, lanes.length);
+-    const baseR = Math.min(laneW * 0.34, 0.095), band = travel(baseR * 1.4 * 1.25);
++    const W = canvas.width, H = canvas.height, aspect = W / H;
++    // phone: two rows of four (r3: eight lanes of 49px left ~35px blobs, a clipped edge blob and the stage half empty)
++    const pad = 24 / innerHeight;   // r4: the edge lanes keep a 24px gutter, like the labels
++    const lay = rows => { const per = Math.ceil(lanes.length / rows), laneW = (aspect - 2 * pad) / Math.max(1, per);
++      const baseR = Math.min(laneW * 0.34, 0.095), maxR = Math.min(baseR * 1.4, laneW * 0.36) * 1.25;   // the biggest blob that can be drawn (R is lane-capped below), not one that can't
++      const band = travel(maxR); return { rows, per, laneW, baseR, maxR, band, t: rows === 2 ? (band[1] - band[0] - 2 * maxR - 0.05) / 2 : 0 }; };   // row gap: a blob over a blob plus a label
++    let Ly = aspect < 0.8 && lanes.length > 4 ? lay(2) : lay(1);
++    if (Ly.rows === 2 && Ly.t < 0.03) Ly = lay(1);   // a screen too short for two rows that can move: one row (never two rows stacked on one line)
++    const { rows, per, laneW, baseR, band, t } = Ly;
++    const bandOf = row => rows === 1 ? band : row === 0 ? [band[1] - t, band[1]] : [band[0], band[0] + t];
+     let n = 0; balls.fill(0); cols.fill(0);
+     lanes.forEach((L, i) => {
+-      const cx = (i + 0.5) * laneW, cy = band[0] + L.h * (band[1] - band[0]), amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
++      const bd = bandOf(Math.floor(i / per)), cx = pad + (i % per + 0.5) * laneW, cy = bd[0] + L.h * (bd[1] - bd[0]), amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
+       let low = Infinity;
+       L.drops.forEach((d, k) => {
+         const core = k === 0, brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
+         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));
+-        const R = Math.min(baseR * L.sz, laneW * 0.36), r = R * d.rr, room = Math.max(0, laneW * 0.5 - r);   // capped to its lane: two big neighbours never fuse
++        const R = Math.min(baseR * L.sz, laneW * 0.36), r = R * d.rr, room = Math.max(0, laneW * 0.5 - r * 1.4);   // capped to its lane: two big neighbours never fuse; 1.4 r clears the soft edge of a core+satellite body (1.25 r still touched at full size), so an edge lane never clips
+         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
+-        const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, band[0], band[1]);
++        const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
+         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
+-        if (core) { L.hx = x; L.hy = y; L.hitR = Math.max(r * 1.5, laneW * 0.45); }   // tap target: a small blob gets its lane's width
++        if (core) { L.hx = x; L.hy = y; L.r = r; L.hitR = Math.max(r * 1.5, laneW * 0.45); }   // tap target: a small blob gets its lane's width
+         low = Math.min(low, y - r * 1.1);
+         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
+         n++;
+       });
+       L.tagX = cx / aspect; L.tagY = low - 0.035;
+     });
++    const rs = lanes.filter(L => L.r != null).map(L => L.r); if (rs.length === lanes.length && rs.length) canvas.dataset.coreR = Math.round(Math.min(...rs) * innerHeight);   // read by economy-check.sh: the smallest blob's core radius, CSS px
+     canvas.dataset.drops = Math.min(n, NB);   // read by economy-check.sh: drops the shader can actually draw (slots past NB are dropped by GL)
+     const heat = Mood.colour(avgShown);
+     gl.uniform2f(uRes, W, H); gl.uniform3fv(uBalls, balls); gl.uniform3fv(uCols, cols);
+     gl.uniform3f(uBgTop, 0.035, 0.02, 0.055); gl.uniform3f(uBgBot, 0.07, 0.035, 0.08); gl.uniform3f(uHeat, heat[0], heat[1], heat[2]);
+     gl.drawArrays(gl.TRIANGLES, 0, 3);
++    if (PROBE && !(+canvas.dataset.edgeTests >= 40)) probeEdges();   // capped: a readPixels stalls the GPU (headless draws only a few frames here)
++  }
++  // ?probe (economy-check.sh only): read the screen's left and right pixel columns; wax there over 0.4 of the
++  // dimmest core means a blob is cut by the edge (r3: Central banks clipped on a phone)
++  const PROBE = /[?&]probe\b/.test(location.search);
++  function probeEdges() {
++    const W = canvas.width, H = canvas.height, col = new Uint8Array(4 * H), px = new Uint8Array(4), D = canvas.dataset;
++    let core = Infinity; for (const L of lanes) if (L.hx != null) { gl.readPixels(Math.round(L.hx * H), Math.round(L.hy * H), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); core = Math.min(core, px[0] + px[1] + px[2]); }
++    core = Math.max(core, 150);   // a dim flat group's core never drags the bar down to the glow
++    let hit = 0;
++    for (const x of [0, W - 1]) { gl.readPixels(x, 0, 1, H, gl.RGBA, gl.UNSIGNED_BYTE, col); for (let y = 0; y < H; y++) if (col[4 * y] + col[4 * y + 1] + col[4 * y + 2] > 0.4 * core) hit++; }   // wax body >= ~0.55 of a core, glow alone <= ~0.2
++    D.edgeTests = (+D.edgeTests || 0) + 1; D.edgeHits = (+D.edgeHits || 0) + (hit > 0 ? 1 : 0);
+   }
+ 
+   // ---------- step: ease every blob toward its data ----------
+diff --git a/index.html b/index.html
+index d7cc1b3..f6f555d 100644
+--- a/index.html
++++ b/index.html
+@@ -65,13 +65,13 @@
+   .mood .key { margin: 6px auto 0; padding: 0 16px; font-size: 12px; color: var(--ink-3); max-width: 560px; }
+   .tags { position: fixed; inset: 0; pointer-events: none; }
+   .tags span.door { pointer-events: auto; cursor: pointer; }
+-  .tags span.econ { font-size: 10px; opacity: .8; }
++  .tags span.econ { font-size: 10px; }
+   @media (max-width: 480px) { .tags span.econ { font-size: 9px; letter-spacing: .03em; } }
+   .fam { position: fixed; inset: 0; pointer-events: none; }
+   .fam span { position: absolute; transform: translate(-50%, 0); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2); opacity: .85; white-space: nowrap;
+     padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, .14); }
+   .fam.stacked { display: none; }   /* phone: the two rows split stocks (top) from the economy (bottom); a caption there hit the index labels */
+-  @media (max-width: 480px) { .tags span.econ { white-space: normal; max-width: 11vw; font-size: 8.5px; letter-spacing: 0; line-height: 1.15; text-align: center; } }   /* fits its 1/8 lane: no label leans on a neighbour, so none is pushed down */   /* "CENTRAL BANKS" wraps inside its lane, never into a neighbour */
++  @media (max-width: 480px) { .tags span.econ { white-space: normal; max-width: 12.5vw; font-size: 9.5px; letter-spacing: 0; line-height: 1.15; text-align: center; } }   /* fits its 1/8 lane: no label leans on a neighbour, so none is pushed down */   /* "CENTRAL BANKS" wraps inside its lane, never into a neighbour */
+   body.incell .fam { display: none; }
+   .cellcap { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; display: none; }
+   body.incell .cellcap { display: block; }
+@@ -552,13 +552,16 @@
+       uniform vec3 uBgTop; uniform vec3 uBgBot; uniform vec3 uHeat; uniform float uFear;
+       void main(){
+         vec2 q = gl_FragCoord.xy / uRes.y;
+-        float f = 0.0; vec3 c = vec3(0.0);
++        float f = 0.0, ws = 0.0, fe = 0.0, fg = 0.0; int g = -1; vec3 c = vec3(0.0);
+         for (int i = 0; i < ${N}; i++) {
+           vec2 d = q - uBalls[i].xy; float r = uBalls[i].z;
+           float w = r * r / max(dot(d, d), 1e-5); w *= w;        // squared falloff: globs stay distinct
+-          f += w; c += uCols[i] * w;
++          ws += w; c += uCols[i] * w;
++          if (i < ${4 * DROPS}) f += w;
++          else { int gi = (i - ${4 * DROPS}) / ${ECON_DROPS}; if (gi != g) { fe = max(fe, fg); fg = 0.0; g = gi; } fg += w; }
+         }
+-        c /= max(f, 1e-5);
++        f += max(fe, fg);   // an economy blob's body is its own drops only: 8 neighbours a lane apart never bridge (phone lanes are ~49px)
++        c /= max(ws, 1e-5);
+         float y = gl_FragCoord.y / uRes.y;
+         vec3 bg = mix(uBgBot, uBgTop, smoothstep(0.0, 1.0, y));
+         // fear gauge: a nervous VIX widens the lamp's warm floor glow on top of the mood's own
+@@ -700,24 +703,24 @@
+         const brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
+         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));   // break-away clock shared: equal chop, equal spread
+         if (isE && stacked && !core) { balls[n * 3 + 2] = 0; n++; return; }   // phone: a small economy blob stays one clean drop
+-        const R = isE ? Math.max(stacked && aspect < 0.8 ? 0.025 : 0, Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3))) : baseR * L.sz;   // phone: never under ~42px, a thumb's target   // an economy blob never outgrows its narrow lane; offsets scale with the blob
++        const R = isE ? Math.max(stacked && aspect < 0.8 ? 22 / innerHeight : 0, Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3))) : baseR * L.sz;   // phone: a 44px blob, a thumb's target (the shader keeps neighbours from bridging)   // an economy blob never outgrows its narrow lane; offsets scale with the blob
+         const r = R * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
+-        const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? w * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
++        const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? (isE && fam.stacked ? 0 : w * 0.06) : R * 0.45 * d.ax * drift) * amp, -room, room);   // phone: a 44px economy blob in a 49px lane holds its x
+         const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
+         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
+-        if (core) { L.hx = x; L.hy = y; L.hitR = isE ? Math.max(r * 1.5, w * 0.45) : r * 1.5; }   // tap target: a small economy blob gets its lane's width
++        if (core) { L.hx = x; L.hy = y; L.r = r; L.hitR = isE ? Math.max(r * 1.5, w * 0.45) : r * 1.5; }   // tap target: a small economy blob gets its lane's width
+         low = Math.min(low, y - r * 1.1);
+         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
+         n++;
+       });
+-      L.tagX = cx / aspect; L.tagY = isE && stacked && aspect < 0.8 ? low - 0.02 : isE && stacked ? bandE[0] - Math.min(wE * 0.36, baseR * 1.4 * 0.75) - 0.022 : low - 0.035;   // phone: each label right under ITS blob (wrapped inside the lane); wide: the row shares one baseline
++      L.tagX = cx / aspect; L.tagY = isE ? low : low - 0.035;   // every label right under ITS blob; an economy label hangs its TOP 4px under the wax (ui() knows its height). r3: a shared baseline sat 40-100px under floating blobs
+       top[isE ? 1 : 0] = Math.max(top[isE ? 1 : 0], L.hy + (L.hitR || 0) / 1.5);
+     });
+     // captions glide with small bobs and snap on a first sight or a big change (data just arrived)
+     const glide = (cur, want) => cur == null || !isFinite(cur) || Math.abs(want - cur) > 0.04 ? want : cur + (want - cur) * 0.25;   // a caption trails its blob by a few frames, never by a screen
+     const capY = Math.max(top[0], econ.length ? top[1] : 0) + 0.04;   // both captions on one line, over the tallest wax of either family
+     fam.iY = glide(fam.iY, Math.min(capY, free[1] - 0.006));   // never into the mood block above the stage
+-    fam.eY = stacked && !fam.stacked ? glide(fam.eY, bandE[1] + Math.min(wE * 0.36, baseR * 1.4 * 0.75) * 1.25 + 0.03) : fam.iY;   // wide + two rows: ECONOMY rides over its own row (the divider a reader looks for)
++    fam.eY = stacked && !fam.stacked ? glide(fam.eY, top[1] + 0.025) : fam.iY;   // wide + two rows: ECONOMY rides just over its own row's tallest wax, never up among the stocks
+     for (; n < N; n++) balls[n * 3 + 2] = 0;   // unused slots: radius 0 adds nothing to the field
+     const heat = Mood.colour(avgPctShown);
+     gl.uniform2f(uRes, W, H);
+@@ -727,6 +730,18 @@
+     gl.uniform3f(uHeat, heat[0], heat[1], heat[2]);
+     gl.uniform1f(uFear, fearShown);
+     gl.drawArrays(gl.TRIANGLES, 0, 3);
++    if (PROBE && ++probeN <= 40) probeBridges();   // capped: a readPixels stalls the GPU (uncapped, headless hung)
++  }
++  // ?probe (economy-check.sh only): read the drawn pixels halfway between two neighbouring economy blobs close
++  // enough that summed fields WOULD bridge them (centres < 2.38 r apart). Wax there (over 0.4 of a core) = fused.
++  const PROBE = /[?&]probe\b/.test(location.search), px1 = new Uint8Array(4); let probeN = 0;
++  function probeBridges() {
++    const H = canvas.height, lum = (x, y) => { gl.readPixels(Math.round(x * H), Math.round(y * H), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px1); return px1[0] + px1[1] + px1[2]; };
++    const D = canvas.dataset; let t = +D.bridgeTests || 0, b = +D.bridged || 0;
++    for (let i = 1; i < econ.length; i++) { const A = econ[i - 1], B = econ[i]; if (A.r == null || B.r == null) continue;
++      if (Math.hypot(A.hx - B.hx, A.hy - B.hy) >= 2.38 * Math.min(A.r, B.r)) continue;
++      t++; if (lum((A.hx + B.hx) / 2, (A.hy + B.hy) / 2) > 0.4 * Math.min(lum(A.hx, A.hy), lum(B.hx, B.hy))) b++; }   // wax body >= ~0.55 of its core, glow alone <= ~0.2
++    D.bridgeTests = t; D.bridged = b;
+   }
+ 
+   let sparkDay = null;
+@@ -766,7 +781,7 @@
+       const w = s.offsetWidth, h = s.offsetHeight || 14, half = w / 2 / W_;
+       const laneE = i >= 4 && fam.stacked;   // phone: an economy label is already confined to its 1/8 lane (max-width); no gutter shove, no push below a neighbour
+       const g = laneE ? 0 : 24 / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges
+-      return { s, l: x - w / 2, r: x + w / 2, h, b: Math.max(0, L.tagY) * H_, x }; });
++      return { s, l: x - w / 2, r: x + w / 2, h, b: Math.max(0, L.tagY * H_ - (i >= 4 ? h + 4 : 0)), x }; });
+     const placed = [];
+     boxes.forEach((B, i) => { if (!B) return;
+       if (i >= 4 && !fam.stacked) for (let guard = 0; guard < 8; guard++) {
+@@ -776,13 +791,17 @@
+       }
+       placed.push(B); });
+     for (const B of boxes) if (B) { B.s.style.left = (B.x / W_ * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible"; }
++    econ.forEach((L, k) => { const B = boxes[4 + k]; if (B) B.s.style.color = hex(L.col.map(v => v * 0.45 + 0.55)); });   // r4: an economy label wears its blob's colour (lightened), so a label's row reads at a glance
++    // read by economy-check.sh: each economy label's box and its blob's bottom/radius, CSS px from the bottom, this frame
++    tags.dataset.geo = JSON.stringify(econ.map((L, k) => { const B = boxes[4 + k]; return B && L.r != null ?
++      [Math.round(B.l), Math.round(B.r), Math.round(B.b + B.h), Math.round(B.b), Math.round((L.hy - L.r) * H_), Math.round(L.r * H_ * 10) / 10, parseFloat(getComputedStyle(B.s).fontSize)] : null; }));
+     // the two family captions (Stocks / Economy): above each family on a wide screen, at the left of each row on a phone
+     const fm = $("fam");
+     if (fm) { fm.hidden = !econ.length || fam.iY == null;   // never shown before draw() has given it a place
+       fm.classList.toggle("stacked", !!fam.stacked);
+       const [cs, ce] = fm.children;
+-      cs.style.left = fam.stacked ? "16px" : (fam.iX * 100).toFixed(2) + "%"; cs.style.bottom = (fam.iY * 100).toFixed(2) + "%";
+-      ce.style.left = fam.stacked ? "16px" : (fam.eX * 100).toFixed(2) + "%"; ce.style.bottom = (fam.eY * 100).toFixed(2) + "%"; }
++      cs.style.left = ce.style.left = fam.stacked ? "16px" : "24px"; cs.style.transform = ce.style.transform = "none";   // r4: each caption heads its row at the left edge, not floating mid-screen among the stocks
++      cs.style.bottom = (fam.iY * 100).toFixed(2) + "%"; ce.style.bottom = (fam.eY * 100).toFixed(2) + "%"; }
+     $("moodWord").textContent = Mood.moodWord(avgPctShown);
+     $("moodWord").style.color = hex(Mood.colour(avgPctShown).map(v => v * 0.35 + 0.65));
+     $("moodSub").textContent = "Average move " + fmtPct(avgPctShown);

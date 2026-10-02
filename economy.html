@@ -51,7 +51,7 @@
   .tags { position: fixed; inset: 0; pointer-events: none; }
   .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink-2); white-space: nowrap; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); pointer-events: auto; cursor: pointer; }
-  @media (max-width: 480px) { .tags span { font-size: 10px; letter-spacing: .03em; } }   /* 7 labels share 390px */
+  @media (max-width: 480px) { .tags span { font-size: 10px; letter-spacing: .03em; } }   /* phone: two rows of four lanes (~97px each) */
   /* PANEL-CSS: the one details panel (identical block in index.html and economy.html; panel-check.sh compares them) */
   .panel { position: fixed; z-index: 6; top: 0; right: 0; bottom: 0; width: 360px; max-width: 100%; overflow-y: auto; outline: none;
     background: rgba(18, 11, 24, .94); border-left: 1px solid var(--line); box-shadow: -10px 0 40px rgba(0, 0, 0, .45);
@@ -88,7 +88,7 @@
   footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
   .notice { text-align: center; color: var(--ink-2); font-size: 14px; display: none; margin: 0 0 10px; }
   .notice.on { display: block; }
-  .readouts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }   /* r4: 8 groups = two full rows, no orphan */
   .card { background: var(--glass); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; cursor: pointer;
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); min-width: 0; color: inherit; font: inherit; text-align: left; }
   .card .name { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -391,31 +391,52 @@
     return hi > lo ? [lo, hi] : [(lo + hi) / 2, (lo + hi) / 2];
   }
   function draw() {
-    const W = canvas.width, H = canvas.height, aspect = W / H, laneW = aspect / Math.max(1, lanes.length);
-    const baseR = Math.min(laneW * 0.34, 0.095), band = travel(baseR * 1.4 * 1.25);
+    const W = canvas.width, H = canvas.height, aspect = W / H;
+    // phone: two rows of four (r3: eight lanes of 49px left ~35px blobs, a clipped edge blob and the stage half empty)
+    const pad = 24 / innerHeight;   // r4: the edge lanes keep a 24px gutter, like the labels
+    const lay = rows => { const per = Math.ceil(lanes.length / rows), laneW = (aspect - 2 * pad) / Math.max(1, per);
+      const baseR = Math.min(laneW * 0.34, 0.095), maxR = Math.min(baseR * 1.4, laneW * 0.36) * 1.25;   // the biggest blob that can be drawn (R is lane-capped below), not one that can't
+      const band = travel(maxR); return { rows, per, laneW, baseR, maxR, band, t: rows === 2 ? (band[1] - band[0] - 2 * maxR - 0.05) / 2 : 0 }; };   // row gap: a blob over a blob plus a label
+    let Ly = aspect < 0.8 && lanes.length > 4 ? lay(2) : lay(1);
+    if (Ly.rows === 2 && Ly.t < 0.03) Ly = lay(1);   // a screen too short for two rows that can move: one row (never two rows stacked on one line)
+    const { rows, per, laneW, baseR, band, t } = Ly;
+    const bandOf = row => rows === 1 ? band : row === 0 ? [band[1] - t, band[1]] : [band[0], band[0] + t];
     let n = 0; balls.fill(0); cols.fill(0);
     lanes.forEach((L, i) => {
-      const cx = (i + 0.5) * laneW, cy = band[0] + L.h * (band[1] - band[0]), amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
+      const bd = bandOf(Math.floor(i / per)), cx = pad + (i % per + 0.5) * laneW, cy = bd[0] + L.h * (bd[1] - bd[0]), amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
       let low = Infinity;
       L.drops.forEach((d, k) => {
         const core = k === 0, brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));
-        const R = Math.min(baseR * L.sz, laneW * 0.36), r = R * d.rr, room = Math.max(0, laneW * 0.5 - r);   // capped to its lane: two big neighbours never fuse
+        const R = Math.min(baseR * L.sz, laneW * 0.36), r = R * d.rr, room = Math.max(0, laneW * 0.5 - r * 1.4);   // capped to its lane: two big neighbours never fuse; 1.4 r clears the soft edge of a core+satellite body (1.25 r still touched at full size), so an edge lane never clips
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
-        const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, band[0], band[1]);
+        const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
-        if (core) { L.hx = x; L.hy = y; L.hitR = Math.max(r * 1.5, laneW * 0.45); }   // tap target: a small blob gets its lane's width
+        if (core) { L.hx = x; L.hy = y; L.r = r; L.hitR = Math.max(r * 1.5, laneW * 0.45); }   // tap target: a small blob gets its lane's width
         low = Math.min(low, y - r * 1.1);
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
       });
       L.tagX = cx / aspect; L.tagY = low - 0.035;
     });
+    const rs = lanes.filter(L => L.r != null).map(L => L.r); if (rs.length === lanes.length && rs.length) canvas.dataset.coreR = Math.round(Math.min(...rs) * innerHeight);   // read by economy-check.sh: the smallest blob's core radius, CSS px
     canvas.dataset.drops = Math.min(n, NB);   // read by economy-check.sh: drops the shader can actually draw (slots past NB are dropped by GL)
     const heat = Mood.colour(avgShown);
     gl.uniform2f(uRes, W, H); gl.uniform3fv(uBalls, balls); gl.uniform3fv(uCols, cols);
     gl.uniform3f(uBgTop, 0.035, 0.02, 0.055); gl.uniform3f(uBgBot, 0.07, 0.035, 0.08); gl.uniform3f(uHeat, heat[0], heat[1], heat[2]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (PROBE && !(+canvas.dataset.edgeTests >= 40)) probeEdges();   // capped: a readPixels stalls the GPU (headless draws only a few frames here)
+  }
+  // ?probe (economy-check.sh only): read the screen's left and right pixel columns; wax there over 0.4 of the
+  // dimmest core means a blob is cut by the edge (r3: Central banks clipped on a phone)
+  const PROBE = /[?&]probe\b/.test(location.search);
+  function probeEdges() {
+    const W = canvas.width, H = canvas.height, col = new Uint8Array(4 * H), px = new Uint8Array(4), D = canvas.dataset;
+    let core = Infinity; for (const L of lanes) if (L.hx != null) { gl.readPixels(Math.round(L.hx * H), Math.round(L.hy * H), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); core = Math.min(core, px[0] + px[1] + px[2]); }
+    core = Math.max(core, 150);   // a dim flat group's core never drags the bar down to the glow
+    let hit = 0;
+    for (const x of [0, W - 1]) { gl.readPixels(x, 0, 1, H, gl.RGBA, gl.UNSIGNED_BYTE, col); for (let y = 0; y < H; y++) if (col[4 * y] + col[4 * y + 1] + col[4 * y + 2] > 0.4 * core) hit++; }   // wax body >= ~0.55 of a core, glow alone <= ~0.2
+    D.edgeTests = (+D.edgeTests || 0) + 1; D.edgeHits = (+D.edgeHits || 0) + (hit > 0 ? 1 : 0);
   }
 
   // ---------- step: ease every blob toward its data ----------
