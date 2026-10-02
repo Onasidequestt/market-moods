@@ -71,6 +71,7 @@
   .fam span { position: absolute; transform: translate(-50%, 0); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2); opacity: .85; white-space: nowrap;
     padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, .14); }
   .fam.stacked { display: none; }   /* phone: the two rows split stocks (top) from the economy (bottom); a caption there hit the index labels */
+  @media (max-width: 480px) { .tags span.econ { white-space: normal; max-width: 11vw; font-size: 8.5px; letter-spacing: 0; line-height: 1.15; text-align: center; } }   /* fits its 1/8 lane: no label leans on a neighbour, so none is pushed down */   /* "CENTRAL BANKS" wraps inside its lane, never into a neighbour */
   body.incell .fam { display: none; }
   .cellcap { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; display: none; }
   body.incell .cellcap { display: block; }
@@ -683,7 +684,7 @@
     const band = travel(baseR * 1.4 * 1.25);   // biggest blob (size 1.4) with its droplets bunched: body edge at (Σr⁴)^¼ ≈ 1.23 R
     const span = band[1] - band[0];
     const bandI = stacked ? [band[0] + span * 0.55, band[1]] : band, bandE = stacked ? [band[0], band[0] + span * 0.22] : band;
-    fam.stacked = stacked; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
+    fam.stacked = stacked && aspect < 0.8; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
     const top = [0, 0];   // each family's highest wax this frame: its caption rides just above it
     let n = 0;
     lanes.concat(econ).forEach((L, i) => {
@@ -699,7 +700,7 @@
         const brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));   // break-away clock shared: equal chop, equal spread
         if (isE && stacked && !core) { balls[n * 3 + 2] = 0; n++; return; }   // phone: a small economy blob stays one clean drop
-        const R = isE ? Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3)) : baseR * L.sz;   // an economy blob never outgrows its narrow lane; offsets scale with the blob
+        const R = isE ? Math.max(stacked && aspect < 0.8 ? 0.025 : 0, Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3))) : baseR * L.sz;   // phone: never under ~42px, a thumb's target   // an economy blob never outgrows its narrow lane; offsets scale with the blob
         const r = R * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? w * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
         const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
@@ -709,13 +710,14 @@
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
       });
-      L.tagX = cx / aspect; L.tagY = isE && stacked ? bandE[0] - Math.min(wE * 0.36, baseR * 1.4 * 0.75) - 0.022 : low - 0.035;   // 0.022: the label hugs the row (panel: "labels closer to blobs")   // under the blob; a phone's economy row shares one baseline
+      L.tagX = cx / aspect; L.tagY = isE && stacked && aspect < 0.8 ? low - 0.02 : isE && stacked ? bandE[0] - Math.min(wE * 0.36, baseR * 1.4 * 0.75) - 0.022 : low - 0.035;   // phone: each label right under ITS blob (wrapped inside the lane); wide: the row shares one baseline
       top[isE ? 1 : 0] = Math.max(top[isE ? 1 : 0], L.hy + (L.hitR || 0) / 1.5);
     });
     // captions glide with small bobs and snap on a first sight or a big change (data just arrived)
-    const glide = (cur, want) => cur == null || Math.abs(want - cur) > 0.08 ? want : cur + (want - cur) * 0.08;
+    const glide = (cur, want) => cur == null || !isFinite(cur) || Math.abs(want - cur) > 0.04 ? want : cur + (want - cur) * 0.25;   // a caption trails its blob by a few frames, never by a screen
     const capY = Math.max(top[0], econ.length ? top[1] : 0) + 0.04;   // both captions on one line, over the tallest wax of either family
-    fam.iY = glide(fam.iY, capY); fam.eY = fam.iY;
+    fam.iY = glide(fam.iY, Math.min(capY, free[1] - 0.006));   // never into the mood block above the stage
+    fam.eY = stacked && !fam.stacked ? glide(fam.eY, bandE[1] + Math.min(wE * 0.36, baseR * 1.4 * 0.75) * 1.25 + 0.03) : fam.iY;   // wide + two rows: ECONOMY rides over its own row (the divider a reader looks for)
     for (; n < N; n++) balls[n * 3 + 2] = 0;   // unused slots: radius 0 adds nothing to the field
     const heat = Mood.colour(avgPctShown);
     gl.uniform2f(uRes, W, H);
@@ -762,11 +764,12 @@
     const all = lanes.concat(econ), els = [...tags.children], W_ = innerWidth, H_ = innerHeight;
     const boxes = all.map((L, i) => { const s = els[i]; if (!s || L.tagX == null) return null;
       const w = s.offsetWidth, h = s.offsetHeight || 14, half = w / 2 / W_;
-      const g = 24 / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges
+      const laneE = i >= 4 && fam.stacked;   // phone: an economy label is already confined to its 1/8 lane (max-width); no gutter shove, no push below a neighbour
+      const g = laneE ? 0 : 24 / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges
       return { s, l: x - w / 2, r: x + w / 2, h, b: Math.max(0, L.tagY) * H_, x }; });
     const placed = [];
     boxes.forEach((B, i) => { if (!B) return;
-      if (i >= 4) for (let guard = 0; guard < 8; guard++) {
+      if (i >= 4 && !fam.stacked) for (let guard = 0; guard < 8; guard++) {
         const hit = placed.find(P => B.l < P.r + 4 && B.r > P.l - 4 && B.b < P.b + P.h + 2 && B.b + B.h > P.b - 2);
         if (!hit) break; B.b = Math.max(0, hit.b - B.h - 2);
         if (B.b === 0) break;

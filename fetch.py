@@ -413,13 +413,14 @@ ECON = [
 ]
 # a feed's raw unit divided into the unit the page names (FRED: WALCL/ECBASSETSW in millions, JPNASSETS in 100 millions)
 ECON_SCALE = {"fedAssets": 1e6, "ecbAssets": 1e6, "bojAssets": 1e4}
-# things Clark asked for that no free keyless source carries: listed on the page, never faked
+# a blob's label per series (the full name rides in the tooltip)
 ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls": "Payrolls", "claims": "Claims",
               "sentiment": "Sentiment", "retail": "Retail", "spending": "Spending", "homes": "Homes", "dollar": "Dollar", "t3m": "3-month", "t5y": "5-year",
               "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
               "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI", "credit": "Credit", "cards": "Cards", "fedDebt": "Fed. debt",
               "m1": "M1", "railCars": "Rail cars", "railBox": "Intermodal", "tsi": "Freight idx", "truckTons": "Tonnage", "imports": "Import prices", "exports": "Export prices", "tradeCH": "China trade", "tradeCA": "Canada trade", "tradeMX": "Mexico trade", "tradeJP": "Japan trade", "tradeKR": "Korea trade", "tradeUK": "UK trade", "tradeGE": "Germany trade", "tradeFR": "France trade", "goldUSA": "US gold", "goldDEU": "German gold", "goldITA": "Italian gold", "goldFRA": "French gold", "goldCHN": "China gold", "goldIND": "India gold", "goldPOL": "Polish gold", "goldTUR": "Turkish gold", "boeAssets": "BoE", "pbocAssets": "PBoC", "snbAssets": "SNB", "fxReserves": "FX reserves", "usdShare": "USD share",  "fedAssets": "Fed", "ecbAssets": "ECB", "bojAssets": "BoJ", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
               "trucking": "Trucking", "feeder": "Feeder", "oj": "OJ", "cattle": "Cattle", "rice": "Rice", "hogs": "Hogs"}     # a blob's label; the full name rides in the tooltip
+# things Clark asked for that no free keyless source carries: listed on the page, never faked
 ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)"),
                 ("energy", "Propane", "Yahoo lists Mont Belvieu propane (B0=F) but it printed once in 5 days: too thin for a move"),
                 ("energy", "Ethanol", "Yahoo's ethanol future (EH=F) returns no prices; no other free keyless feed"),

@@ -78,9 +78,7 @@
   @media (max-width: 699px) {
     /* a phone inside a 16-member group: the footer (note + members) must not eat the stage, so it scrolls within
        its lower half and the "not shown" note clamps to three lines (tap it for the rest) */
-    body.incell footer { max-height: 46vh; max-height: 46dvh; overflow-y: auto; }
-    body.incell .notice { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
-    body.incell .notice.full { -webkit-line-clamp: unset; display: block; }
+    body.incell footer { max-height: 42vh; max-height: 42dvh; overflow-y: auto; }   /* the note stays whole; the footer scrolls */
     .panel { top: auto; left: 0; width: auto; max-height: 60vh; max-height: 60dvh; border-left: 0; border-top: 1px solid var(--line);
       border-radius: 18px 18px 0 0; box-shadow: 0 -10px 40px rgba(0, 0, 0, .45); transform: translateY(100%); }
     .panel.open { transform: none; }
@@ -518,7 +516,9 @@
     ctx.fillStyle = "rgba(20,11,24,.9)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     for (const N of list) if (N.r >= 12 && N.r < 24) {   // too small for name + move: the name alone, so no blob is left blank
       ctx.font = `600 9px ui-sans-serif, -apple-system, sans-serif`;
-      let t = N.m.short || N.m.name; while (t.length > 3 && ctx.measureText(t).width > N.r * 1.9) t = t.slice(0, -1);
+      let t = N.m.short || N.m.name, first = t.split(" ")[0];   // "Rail cars" -> "Rail", "USD share" -> "USD": a whole word before a clipped one
+      if (ctx.measureText(t).width > N.r * 1.9 && ctx.measureText(first).width <= N.r * 1.9) t = first;
+      while (t.length > 3 && ctx.measureText(t).width > N.r * 1.9) t = t.slice(0, -1);
       ctx.fillText(t, N.dx, N.dy);
     }
     for (const N of list) if (N.r >= 24) {
@@ -561,7 +561,7 @@
     const miss = ((data && data.missing) || []).filter(x => x.group === g.key);
     const nt = $("notice");
     nt.textContent = miss.length ? "Not shown: " + miss.map(x => `${x.name} (${x.why})`).join("; ") + "." : "";
-    nt.classList.toggle("on", !!miss.length); nt.classList.remove("full"); nt.onclick = () => nt.classList.toggle("full");
+    nt.classList.toggle("on", !!miss.length);
   }
   function openCell(key) {
     if (!G.some(g => g.key === key)) return false;
