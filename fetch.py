@@ -23,7 +23,7 @@ company's move from its previous official close, in basis points (0.01%), on tha
 
 usage: fetch.py [--out data/market.json] | fetch.py --companies | fetch.py --selfcheck
 """
-import html, http.cookiejar, json, pathlib, re, sys, time, urllib.request
+import csv, html, http.cookiejar, io, json, pathlib, re, ssl, sys, time, urllib.error, urllib.request
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -284,10 +284,15 @@ SOURCE_NOTE = {
 MIN_PRICED = {"dow": 27, "sp500": 450, "nasdaq": 400, "russell": 400}
 
 def market_open(now=None):
-    """Pure: is NYSE in its regular session (Mon-Fri 9:30-16:05 ET; 5 min grace for the last bar)?
+    """Pure: is NYSE in its regular session (Mon-Fri 9:30-16:25 ET; the grace after the bell lets one last round catch the closing bars)?
     ponytail: holidays are not modelled - on one the loop just refetches an unchanged file and commits nothing."""
     n = (now or datetime.now(ET)).astimezone(ET)
-    return n.weekday() < 5 and (9, 30) <= (n.hour, n.minute) <= (16, 5)
+    return n.weekday() < 5 and (9, 30) <= (n.hour, n.minute) <= (16, 25)
+
+def econ_open(now=None):
+    """Pure: do the economy's futures trade (CME: Sun 18:00 ET to Fri 17:00 ET)? The daily 1-hour break is ignored."""
+    n = (now or datetime.now(ET)).astimezone(ET); w, hm = n.weekday(), (n.hour, n.minute)   # Mon=0 .. Sun=6
+    return not (w == 5 or (w == 4 and hm >= (17, 0)) or (w == 6 and hm < (18, 0)))
 
 def build_companies(market, index="sp500"):
     ix = next(i for i in market["indexes"] if i["key"] == index)
@@ -373,23 +378,54 @@ ECON = [
         ("trade", "Trade balance", "f", "BOPGSTB", "bn", "$ million / month", "monthly"),
         ("cassShip", "Freight shipments (Cass)", "f", "FRGSHPUSM649NCIS", "pct", "index", "monthly"),
         ("cassSpend", "Freight spending (Cass)", "f", "FRGEXPUSM649NCIS", "pct", "index", "monthly"),
-        ("trucking", "Trucking prices (PPI)", "f", "PCU484121484121", "pct", "index", "monthly")]),
+        ("trucking", "Trucking prices (PPI)", "f", "PCU484121484121", "pct", "index", "monthly"),
+        ("railCars", "Rail freight carloads", "f", "RAILFRTCARLOADSD11", "pct", "carloads / month", "monthly"),
+        ("railBox", "Rail intermodal (containers on trains)", "f", "RAILFRTINTERMODAL", "pct", "units / month", "monthly"),
+        ("tsi", "Freight services index (all modes)", "f", "TSIFRGHT", "pct", "index", "monthly"),
+        ("truckTons", "Truck tonnage", "f", "TRUCKD11", "pct", "index", "monthly"),
+        ("imports", "Import prices", "f", "IR", "pct", "index", "monthly"),
+        ("exports", "Export prices", "f", "IQ", "pct", "index", "monthly"),
+        ("tradeCH", "US trade balance with China", "t", "EXPCH:IMPCH", "bn", "$ million / month", "monthly"),
+        ("tradeCA", "US trade balance with Canada", "t", "EXPCA:IMPCA", "bn", "$ million / month", "monthly"),
+        ("tradeMX", "US trade balance with Mexico", "t", "EXPMX:IMPMX", "bn", "$ million / month", "monthly"),
+        ("tradeJP", "US trade balance with Japan", "t", "EXPJP:IMPJP", "bn", "$ million / month", "monthly"),
+        ("tradeKR", "US trade balance with South Korea", "t", "EXPKR:IMPKR", "bn", "$ million / month", "monthly"),
+        ("tradeUK", "US trade balance with United Kingdom", "t", "EXPUK:IMPUK", "bn", "$ million / month", "monthly"),
+        ("tradeGE", "US trade balance with Germany", "t", "EXPGE:IMPGE", "bn", "$ million / month", "monthly"),
+        ("tradeFR", "US trade balance with France", "t", "EXPFR:IMPFR", "bn", "$ million / month", "monthly")]),
+    ("cbanks", "Central banks", "Central banks", [
+        ("fedAssets", "Fed holdings (balance sheet)", "f", "WALCL", "pct", "$ million held", "weekly"),
+        ("ecbAssets", "ECB holdings (balance sheet)", "f", "ECBASSETSW", "pct", "\u20ac million held", "weekly"),
+        ("bojAssets", "Bank of Japan holdings (balance sheet)", "f", "JPNASSETS", "pct", "\u00a5 100 million held", "monthly"),
+        ("boeAssets", "Bank of England holdings (balance sheet)", "m", "bis:GB", "pct", "\u00a3 billion held", "quarterly"),
+        ("pbocAssets", "People's Bank of China holdings (balance sheet)", "m", "bis:CN", "pct", "\u00a5 billion held", "quarterly"),
+        ("snbAssets", "Swiss National Bank holdings (balance sheet)", "m", "bis:CH", "pct", "CHF billion held", "quarterly"),
+        ("goldUSA", "Gold held: United States", "m", "irfcl:USA", "pct", "tonnes", "monthly"),
+        ("goldDEU", "Gold held: Germany", "m", "irfcl:DEU", "pct", "tonnes", "monthly"),
+        ("goldITA", "Gold held: Italy", "m", "irfcl:ITA", "pct", "tonnes", "monthly"),
+        ("goldFRA", "Gold held: France", "m", "irfcl:FRA", "pct", "tonnes", "monthly"),
+        ("goldCHN", "Gold held: China", "m", "irfcl:CHN", "pct", "tonnes", "monthly"),
+        ("goldIND", "Gold held: India", "m", "irfcl:IND", "pct", "tonnes", "monthly"),
+        ("goldPOL", "Gold held: Poland", "m", "irfcl:POL", "pct", "tonnes", "monthly"),
+        ("goldTUR", "Gold held: Turkey", "m", "irfcl:TUR", "pct", "tonnes", "monthly"),
+        ("fxReserves", "World FX reserves (all central banks)", "m", "cofer:CI_T:NV_USD", "pct", "$ trillion", "quarterly"),
+        ("usdShare", "US dollar share of FX reserves", "m", "cofer:CI_USD:SHRO_PT", "pct", "% of allocated reserves", "quarterly")]),
 ]
 # things Clark asked for that no free keyless source carries: listed on the page, never faked
 ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls": "Payrolls", "claims": "Claims",
               "sentiment": "Sentiment", "retail": "Retail", "spending": "Spending", "homes": "Homes", "dollar": "Dollar", "t3m": "3-month", "t5y": "5-year",
               "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
               "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI", "credit": "Credit", "cards": "Cards", "fedDebt": "Fed. debt",
-              "m1": "M1", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
+              "m1": "M1", "railCars": "Rail cars", "railBox": "Intermodal", "tsi": "Freight idx", "truckTons": "Tonnage", "imports": "Imports $", "exports": "Exports $", "tradeCH": "China", "tradeCA": "Canada", "tradeMX": "Mexico", "tradeJP": "Japan", "tradeKR": "S. Korea", "tradeUK": "UK", "tradeGE": "Germany", "tradeFR": "France", "goldUSA": "US", "goldDEU": "Germany", "goldITA": "Italy", "goldFRA": "France", "goldCHN": "China", "goldIND": "India", "goldPOL": "Poland", "goldTUR": "Turkey", "boeAssets": "BoE", "pbocAssets": "PBoC", "snbAssets": "SNB", "fxReserves": "FX reserves", "usdShare": "USD share",  "fedAssets": "Fed", "ecbAssets": "ECB", "bojAssets": "BoJ", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
               "trucking": "Trucking", "feeder": "Feeder", "oj": "OJ", "cattle": "Cattle", "rice": "Rice", "hogs": "Hogs"}     # a blob's label; the full name rides in the tooltip
 ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)"),
                 ("energy", "Propane", "Yahoo lists Mont Belvieu propane (B0=F) but it printed once in 5 days: too thin for a move"),
                 ("energy", "Ethanol", "Yahoo's ethanol future (EH=F) returns no prices; no other free keyless feed"),
                 ("shipping", "Baltic Dry Index", "licensed by the Baltic Exchange; no free feed (Cass freight indexes stand in)"),
                 ("shipping", "UPS / FedEx rates", "published as rate cards, not a data feed"),
-                ("shipping", "Trade by country", "the Census trade API now requires a key"),
-                ("debt", "Central-bank reserve holdings", "gold held by central banks: the IMF reserves API returned no data when tested; World Gold Council needs a login"),
-                ("debt", "Central-bank crypto holdings", "no official series: only private trackers' estimates")]
+                ("shipping", "Trade between other country pairs", "only pairs with the US come free (FRED, from the Census); other pairs need a Census/UN key or are over a year old"),
+                ("cbanks", "Reserves reported by Russia and a few others", "not every central bank reports every month to the IMF: Russia's last gold report is months old, so it is left out rather than shown stale"),
+                ("cbanks", "Central-bank crypto holdings", "no central bank reports holding any; the only figures are one-off third-party estimates of government wallets (CoinGecko lists China ~190,000 BTC, Bhutan ~10,800) with no history to measure a move from")]
 
 def parse_fred(text):
     """[(date 'YYYY-MM-DD', value)] from a fredgraph.csv; FRED's '.' (no reading) rows are dropped."""
@@ -430,13 +466,13 @@ def econ_yahoo(spec, daily, intraday):
             "asof": datetime.fromtimestamp(lt, ET).date().isoformat(),
             "bars": [[t, round(c, 4)] for t, c in i[-24:]] if live else []}
 
-def econ_fred(spec, rows):
+def econ_fred(spec, rows, src=None):
     """Pure. A slow member: its latest reading vs the one before, dated by the reading's own date."""
     key, name, _, sid, kind, unit, freq = spec
     if len(rows) < 2: raise ValueError(f"{sid}: fewer than two readings")
     (pd_, prev), (ld, last) = rows[-2], rows[-1]
     m = {"key": key, "name": name, "sym": sid, "kind": kind, "unit": unit, "freq": freq,
-         "src": f"IMF World Economic Outlook ({sid}, estimate)" if spec[2] == "i" else f"FRED ({sid})", "prev": prev, "last": last, "asof": ld, "prev_asof": pd_}
+         "src": src or (f"IMF World Economic Outlook ({sid}, estimate)" if spec[2] == "i" else f"FRED ({sid})"), "prev": prev, "last": last, "asof": ld, "prev_asof": pd_}
     if freq == "monthly" and kind == "pct" and len(rows) > 12:
         m["yoy"] = round((last / rows[-13][1] - 1) * 100, 2)      # against the same month a year before
     return m
@@ -465,6 +501,76 @@ def get_imf(spec):
             return parse_imf(json.load(r), ind, area, datetime.now(timezone.utc).year)
     return _retry(call)
 
+
+# --- IMF International Reserves (IRFCL: gold), IMF COFER (reserve currencies), BIS central-bank assets, US bilateral trade ---
+# All free and keyless. api.imf.org sends an INCOMPLETE certificate chain (curl exit 60, urllib CERTIFICATE_VERIFY_FAILED on
+# a Mac; untested on a runner): on that one error we retry unverified. ponytail: this is public read-only statistics, so a
+# swapped file is the only risk; every value is range-checked (check.js) and the page names the source. Upgrade: pin the
+# IMF intermediate cert, or fetch via DBnomics' mirror (a year behind).
+_csv_cache = {}
+def get_csv(url, accept="text/csv"):
+    if url in _csv_cache: return _csv_cache[url]
+    def call():
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 market-moods", "Accept": accept})
+        try: r = urllib.request.urlopen(req, timeout=60)
+        except urllib.error.URLError as e:
+            if not isinstance(e.reason, ssl.SSLCertVerificationError): raise
+            r = urllib.request.urlopen(req, timeout=60, context=ssl._create_unverified_context())
+        with r: return list(csv.DictReader(io.StringIO(r.read().decode("utf-8-sig"))))
+    _csv_cache[url] = _retry(call)
+    return _csv_cache[url]
+
+OZ_PER_TONNE = 32150.7466
+IMF_SDMX = "https://api.imf.org/external/sdmx/2.1/data/"
+SDMX_CSV = "application/vnd.sdmx.data+csv;version=1.0.0"
+GOLD_COUNTRIES = "+".join(sp[3].split(":")[1] for g in ECON for sp in g[3] if sp[3].startswith("irfcl:"))
+def _per(p):
+    """'2026-M08' -> '2026-08-01', '2026-Q2' -> '2026-04-01' (first day of the period)."""
+    y, _, r = p.partition("-")
+    return f"{y}-{int(r[1:]):02d}-01" if r[0] == "M" else f"{y}-{3 * (int(r[1:]) - 1) + 1:02d}-01"
+
+def parse_irfcl_gold(rows, ctry):
+    """Pure. [(date, tonnes)] of one country's official gold (IRFCL, fine troy ounces / 32150.75). Monetary authorities
+    + central government (S1XS1311) when the country reports it, else S1X; duplicates dropped."""
+    mine = [r for r in rows if r["COUNTRY"] == ctry and r["OBS_VALUE"] not in ("", None)]
+    for sec in ("S1XS1311", "S1X"):
+        pick = {r["TIME_PERIOD"]: float(r["OBS_VALUE"]) for r in mine if r["SECTOR"] == sec}
+        if pick: break
+    else: pick = {}
+    return [(_per(p), v / OZ_PER_TONNE) for p, v in sorted(pick.items())]
+
+def parse_cofer(rows, cur, tr):
+    """Pure. [(date, value)] for the world allocated reserves in one currency: tr SHRO_PT = share in %, NV_USD = $ trillion."""
+    div = 1e12 if tr == "NV_USD" else 1
+    pick = {r["TIME_PERIOD"]: float(r["OBS_VALUE"]) / div for r in rows
+            if r["COUNTRY"] == "G001" and r["INDICATOR"] == "AFXRA" and r["FXR_CURRENCY"] == cur and r["TYPE_OF_TRANSFORMATION"] == tr and r["OBS_VALUE"]}
+    return [(_per(p), v) for p, v in sorted(pick.items())]
+
+def parse_bis_assets(rows, area):
+    """Pure. [(date, billions of the bank's own currency)] - total assets, own currency (not USD: the dollar would
+    move the number on a day the bank did nothing). The file repeats rows; one per quarter."""
+    pick = {r["TIME_PERIOD"]: float(r["OBS_VALUE"]) * 10 ** (int(r["UNIT_MULT"]) - 9) for r in rows
+            if r["REF_AREA"] == area and r["UNIT_MEASURE"] == "XDC" and r["OBS_VALUE"]}
+    return [(_per(p), v) for p, v in sorted(pick.items())]
+
+def get_sdmx(code):
+    """(rows, src) for a spec code: irfcl:USA | cofer:CI_USD:SHRO_PT | bis:CN."""
+    kind, _, arg = code.partition(":")
+    if kind == "irfcl":
+        rows = get_csv(f"{IMF_SDMX}IMF.STA,IRFCL/{GOLD_COUNTRIES}.IRFCLDT1_IRFCL56V_FTO.*.M?lastNObservations=6", SDMX_CSV)
+        return parse_irfcl_gold(rows, arg), "IMF International Reserves (IRFCL), gold as each country reports it"
+    if kind == "cofer":
+        cur, tr = arg.split(":")
+        rows = get_csv(f"{IMF_SDMX}IMF.STA,COFER/G001.AFXRA.CI_USD+CI_T.SHRO_PT+NV_USD.Q?lastNObservations=6", SDMX_CSV)
+        return parse_cofer(rows, cur, tr), "IMF COFER (currency composition of official reserves, world total)"
+    rows = get_csv(f"https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBTA/1.0/Q.{arg}?lastNObservations=6&format=csv")
+    return parse_bis_assets(rows, arg), "BIS central bank total assets (own currency)"
+
+def get_trade(code):
+    """Pure-ish. 'EXPCH:IMPCH' -> [(date, exports - imports in $ million)] on the months both series have."""
+    ex, im = (dict(get_fred(x)) for x in code.split(":"))
+    return [(d, ex[d] - im[d]) for d in sorted(ex) if d in im]
+
 def build_economy(prev=None):
     old = {m["key"]: m for g in (prev or {}).get("groups", []) for m in g["members"]}   # last good file, for a series that fails right now
     groups, missing = [], [{"group": g, "name": n, "why": w} for g, n, w in ECON_MISSING]
@@ -478,6 +584,10 @@ def build_economy(prev=None):
                     mem.append(econ_yahoo(spec, get(spec[3], "1d", "1mo"), intr)); time.sleep(0.3)
                 elif spec[2] == "i":
                     mem.append(econ_fred(spec, get_imf(spec[3])))
+                elif spec[2] == "m":
+                    rows_, src_ = get_sdmx(spec[3]); mem.append(econ_fred(spec, rows_, src_))
+                elif spec[2] == "t":
+                    mem.append(econ_fred(spec, get_trade(spec[3]), "FRED (Census data): exports minus imports, " + spec[3]))
                 else:
                     mem.append(econ_fred(spec, get_fred(spec[3])))
             except Exception as e:      # one dead series never blocks the rest, and is never faked
@@ -514,9 +624,24 @@ def selfcheck():
     d22 = int(datetime(2026, 9, 22, 11, 0, tzinfo=ET).timestamp())
     s2 = shape("sp500", "S&P 500", "^GSPC", {"timestamp": [d22, t0], "indicators": {"quote": [{"close": [97.0, 101.0]}]}}, daily)
     assert [x["date"] for x in s2["sessions"]] == ["2026-09-25"], s2["sessions"]
+    # central-bank parsers on the IMF/BIS CSV shapes (a unit slip is off by 1000x, a sector slip shows GBR's 0 t)
+    ir = [dict(COUNTRY="GBR", SECTOR="S1X", TIME_PERIOD="2026-M08", OBS_VALUE="0"), dict(COUNTRY="GBR", SECTOR="S1XS1311", TIME_PERIOD="2026-M08", OBS_VALUE="9976041.279"),
+          dict(COUNTRY="DEU", SECTOR="S1X", TIME_PERIOD="2026-M07", OBS_VALUE="107683051.528"), dict(COUNTRY="DEU", SECTOR="S1X", TIME_PERIOD="2026-M08", OBS_VALUE="107676802.209"),
+          dict(COUNTRY="DEU", SECTOR="S1XS1311", TIME_PERIOD="2026-M08", OBS_VALUE="107676802.209")]
+    assert parse_irfcl_gold(ir, "GBR") == [("2026-08-01", 9976041.279 / OZ_PER_TONNE)], "prefers S1XS1311 over a zero S1X"
+    g = parse_irfcl_gold(ir, "DEU"); assert [d for d, _ in g] == ["2026-08-01"] and 3349 < g[0][1] < 3350, g
+    cf = [dict(COUNTRY="G001", INDICATOR="AFXRA", FXR_CURRENCY="CI_USD", TYPE_OF_TRANSFORMATION=t, TIME_PERIOD=p, OBS_VALUE=v)
+          for t, p, v in [("SHRO_PT", "2026-Q1", "57.17"), ("SHRO_PT", "2026-Q2", "56.70"), ("NV_USD", "2026-Q2", "7494549610004.36")]]
+    assert parse_cofer(cf, "CI_USD", "SHRO_PT") == [("2026-01-01", 57.17), ("2026-04-01", 56.70)] and abs(parse_cofer(cf, "CI_USD", "NV_USD")[0][1] - 7.4945) < 1e-3
+    bs = [dict(REF_AREA="GB", UNIT_MEASURE=u, UNIT_MULT="9", TIME_PERIOD="2026-Q2", OBS_VALUE=v) for u, v in [("XDC", "799.187"), ("XDC", "799.187"), ("USD", "1070.0")]]
+    assert parse_bis_assets(bs, "GB") == [("2026-04-01", 799.187)], "own currency, one row per quarter"
+    assert _per("2026-Q4") == "2026-10-01" and _per("2026-M08") == "2026-08-01"
+    eo = lambda *a: econ_open(datetime(*a, tzinfo=ET))
+    assert eo(2026, 10, 1, 3, 0) and eo(2026, 10, 2, 16, 59) and not eo(2026, 10, 2, 17, 0) and not eo(2026, 10, 3, 12, 0) \
+        and not eo(2026, 10, 4, 17, 59) and eo(2026, 10, 4, 18, 0), "econ_open window"   # Fri 17:00 ET close .. Sun 18:00 ET open
     mo = lambda *a: market_open(datetime(*a, tzinfo=ET))
-    assert mo(2026, 10, 1, 9, 30) and mo(2026, 10, 1, 16, 5) and not mo(2026, 10, 1, 9, 29) \
-        and not mo(2026, 10, 1, 16, 6) and not mo(2026, 10, 3, 11, 0), "market_open window"   # Sat closed
+    assert mo(2026, 10, 1, 9, 30) and mo(2026, 10, 1, 16, 25) and not mo(2026, 10, 1, 9, 29) \
+        and not mo(2026, 10, 1, 16, 26) and not mo(2026, 10, 3, 11, 0), "market_open window"   # Sat closed
     # companies: two members, one day on the index's clock [t0, t0+300, t0+600]
     sess = [{"date": "2026-09-25", "bars": [[t0, 1.0, 100], [t0 + 300, 1.0, None], [t0 + 600, 1.0, 5]]}]   # the REAL bar shape: [t, close, volume]
     daily_c = {"AAA": [(d24, 200.0), (t0, 999.0)], "BBB": [(d24, 50.0)], "CCC": [(d24, 10.0)]}
@@ -555,7 +680,7 @@ def selfcheck():
     imf = {"values": {"D": {"W": {"2023": 90.8, "2024": 92, "2025": 93.9, "2026": 95.3, "2027": 97.2}}}}
     assert parse_imf(imf, "D", "W", 2026) == [("2023-01-01", 90.8), ("2024-01-01", 92.0), ("2025-01-01", 93.9)]
     # every ECON spec has a known source and rhythm (a typo'd "q" would silently land in the FRED branch)
-    assert all(s[2] in "yfi" and s[6] in ("5min", "weekly", "monthly", "quarterly", "yearly") for _, _, _, sp in ECON for s in sp)
+    assert all(s[2] in "yfimt" and s[6] in ("5min", "weekly", "monthly", "quarterly", "yearly") for _, _, _, sp in ECON for s in sp)
     # economy: parse_fred drops '.' rows; a member is last-vs-the-close-before, dated by its own reading
     rows = parse_fred("observation_date,X\n2026-06-01,10\n2026-07-01,.\n2026-08-01,12.5\n")
     assert rows == [("2026-06-01", 10.0), ("2026-08-01", 12.5)], rows
@@ -608,6 +733,8 @@ if __name__ == "__main__":
         sys.exit(0)
     if "--market-open" in sys.argv:
         sys.exit(0 if market_open() else 1)
+    if "--econ-open" in sys.argv:
+        sys.exit(0 if econ_open() else 1)
     if "--companies" in sys.argv:
         here = pathlib.Path(__file__).parent / "data"
         i = sys.argv.index("--companies")

@@ -271,7 +271,7 @@
     <dt>Colour</dt><dd>Today's move from yesterday's close. Red is falling, amber is flat, green is rising.</dd>
     <dt>Height</dt><dd>Rising indexes float up; falling ones sink. The top and bottom of the lamp are a 1% move.</dd>
     <dt>Size</dt><dd>Bigger means a bigger move either way. A quiet index is a small blob.</dd>
-    <dt>Economy</dt><dd>The smaller blobs on the right are the economy's groups: energy, metals, farm goods, rates and the dollar, the slow numbers, debt and money, and shipping and trade. Same colour, height and size rules; each shows its latest move (they do not replay the day), and some are weekly, monthly, quarterly or yearly numbers. On a phone they ride in their own lower row. Tap one, or its name, to see its members.</dd>
+    <dt>Economy</dt><dd>The smaller blobs in the lower row are the economy's groups: energy, metals, farm goods, rates and the dollar, the slow numbers, debt and money, shipping and trade, and the central banks. Same colour, height and size rules; each shows its latest move (they do not replay the day), and some are weekly, monthly, quarterly or yearly numbers. They ride in their own row below the four indexes. Tap one, or its name, to see its members.</dd>
     <dt>Motion</dt><dd>How choppy the last hour was. A steady index drifts slowly and stays whole; a choppy one churns and throws off droplets.</dd>
     <dt>Mood</dt><dd>The average move of the four: Fearful, Uneasy, Calm, Buoyant or Euphoric.</dd>
     <dt>Fear</dt><dd id="helpFear">The VIX, the market's own fear gauge.</dd>
@@ -672,14 +672,14 @@
 
   function draw() {
     const W = canvas.width, H = canvas.height, aspect = W / H;
-    // wide screens: index lanes full width, economy lanes 0.6 of one, a half-lane gap between the two
-    // families so their wax fields never fuse. Narrow (phone): stocks ride the upper row and the
-    // economy the lower one, each family spread over the whole width, each with its own up/down band.
-    const stacked = econ.length > 0 && aspect < 0.8;
+    // Stocks ride the upper row and the economy the lower one, each family spread over the whole width, each with its own up/down band.
+    const stacked = econ.length > 0;   // two rows at EVERY width (Clark 10-01: "2 rows, not one long one")
     const EW = 0.6, GAP = econ.length && !stacked ? 0.5 : 0;
     const laneW = stacked ? aspect / 4 : aspect / (4 + GAP + EW * econ.length);
     const wE = stacked ? aspect / Math.max(1, econ.length) : laneW * EW, x0E = stacked ? 0 : (4 + GAP) * laneW;
-    const baseR = Math.min(laneW * 0.34, 0.095) * pulseNow;   // the heartbeat: exactly 1 when pulseAmp is 0
+    // two rows must fit the free height between the mood block and the timeline: on a wide screen the old 0.095
+    // radius filled it with the stocks alone, so cap the radius by that height (phones stay lane-limited).
+    const free = travel(0), baseR = Math.min(laneW * 0.34, 0.095, (free[1] - free[0]) * 0.13) * pulseNow;   // the heartbeat: exactly 1 when pulseAmp is 0
     const band = travel(baseR * 1.4 * 1.25);   // biggest blob (size 1.4) with its droplets bunched: body edge at (Σr⁴)^¼ ≈ 1.23 R
     const span = band[1] - band[0];
     const bandI = stacked ? [band[0] + span * 0.55, band[1]] : band, bandE = stacked ? [band[0], band[0] + span * 0.22] : band;
@@ -709,7 +709,7 @@
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
       });
-      L.tagX = cx / aspect; L.tagY = isE && stacked ? bandE[0] - wE * 0.36 - 0.045 : low - 0.035;   // under the blob; a phone's economy row shares one baseline
+      L.tagX = cx / aspect; L.tagY = isE && stacked ? bandE[0] - Math.min(wE * 0.36, baseR * 1.4 * 0.75) - 0.045 : low - 0.035;   // under the blob; a phone's economy row shares one baseline
       top[isE ? 1 : 0] = Math.max(top[isE ? 1 : 0], L.hy + (L.hitR || 0) / 1.5);
     });
     // captions glide with small bobs and snap on a first sight or a big change (data just arrived)

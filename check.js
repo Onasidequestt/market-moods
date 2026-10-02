@@ -240,7 +240,7 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
   if (!fs.existsSync(ef)) console.log("… data/economy.json missing: the economy page shows its honest 'couldn't load' notice");
   else {
     const e = JSON.parse(fs.readFileSync(ef, "utf8")), today = Date.now() / 1000, day = 86400;
-    ok(e.groups.map(g => g.key).join() === "energy,metals,farm,rates,macro,debt,shipping", "economy: the seven groups, in order: " + e.groups.map(g => g.key));
+    ok(e.groups.map(g => g.key).join() === "energy,metals,farm,rates,macro,debt,shipping,cbanks", "economy: the eight groups, in order: " + e.groups.map(g => g.key));
     const seen = new Set(), all = [];
     for (const g of e.groups) {
       ok(g.members.length >= 3, `${g.key}: at least 3 members live (${g.members.length})`);
@@ -272,6 +272,19 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
       const live = seen.has(key), miss = e.missing.find(x => x.name.toLowerCase().includes(word.toLowerCase()));
       ok(live || (miss && miss.why.length > 10), `asked-for ${key}: live, or missing with a reason`);
       ok(!(live && miss), `${key}: not both live and missing`);
+    }
+    // central-bank numbers come from a CSV with unit scales (ounces vs tonnes, USD vs local, trillions): a wrong scale is
+    // off by 1000x, so pin each to its real-world band (gold: US ~8,133 t, Germany ~3,350 t, China ~2,300 t; COFER ~$13 tn, USD ~57%)
+    const band = { goldUSA: [7500, 8800], goldDEU: [3000, 3700], goldITA: [2200, 2700], goldFRA: [2200, 2700], goldCHN: [1800, 3500], goldIND: [600, 1200],
+      goldPOL: [300, 1200], goldTUR: [300, 1300], fxReserves: [8, 20], usdShare: [40, 75], fedAssets: [5e6, 9e6], ecbAssets: [4e6, 9e6],
+      boeAssets: [500, 1500], pbocAssets: [30000, 90000], snbAssets: [500, 1500] };
+    for (const [key, [lo, hi]] of Object.entries(band)) {
+      const m = all.find(x => x.key === key);
+      ok(m && m.last >= lo && m.last <= hi, `central banks: ${key} ${m && m.last} sits in its real-world band ${lo}..${hi}`);
+    }
+    for (const c of ["CH", "CA", "MX", "JP", "KR", "UK", "GE", "FR"]) {
+      const m = all.find(x => x.key === "trade" + c);
+      ok(m && m.kind === "bn" && Math.abs(m.last) < 60000, `trade with ${c}: a balance in $ million under $60 bn (${m && m.last})`);
     }
     ok(e.missing.every(x => x.group && x.name && x.why), "economy: every missing series says which group, what, and why");
     ok(all.length >= 20, `economy: ${all.length} series live`);
