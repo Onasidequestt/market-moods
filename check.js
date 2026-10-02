@@ -171,8 +171,12 @@ for (const key of Object.keys(CELL_FILE)) {
     // And a past day's 16:00 closing print: Yahoo serves it while that day is today, then drops it from the index's
     // 5-day series (09-28: company file 79 bars, index 78), which froze both workflows for a day. So the last bar may
     // also sit PAST the index's last bar, one at most.
+    // 10-02: the forming bar's stamp is the fetch time, which can be AFTER the slot's regular time (18:30:26 vs 18:30:00).
+    // The company grid is copied from the index file, so the old rule (stamp < slot) deadlocked: the index round failed
+    // every 10 min from 18:40Z, the companies kept copying the frozen grid, and the page showed 18:30 prints at the close.
+    const BAR = 300;   // a 5-min bar; the stamp may sit anywhere inside slot k
     if (same) ok(S.t.length <= same.bars.length + 1 && S.t.every((t, k) => (k < same.bars.length && t === same.bars[k][0]) ||
-        (k === S.t.length - 1 && k > 0 && t > same.bars[k - 1][0] && (k >= same.bars.length || t < same.bars[k][0]))), `${key} ${S.date}: company clock = ${key}'s bar times`);
+        (k === S.t.length - 1 && k > 0 && t > same.bars[k - 1][0] && (k >= same.bars.length || t < same.bars[k][0] + BAR))), `${key} ${S.date}: company clock = ${key}'s bar times`);
   }
   const lastC = co.sessions[co.sessions.length - 1];
   ok(lastC.m.filter(Boolean).length >= CELL_MIN[key], `${key} ${lastC.date}: at least ${CELL_MIN[key]} companies priced (${lastC.m.filter(Boolean).length})`);
