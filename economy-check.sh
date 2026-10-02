@@ -67,6 +67,10 @@ for (const SIZE of ["390,844", "1440,900"]) {
     if (g && g.members.every(M.econSlow)) ok(/^monthly · \w{3} \d{4}$/.test(when), `${tag}: the ${k} card (slow numbers only) shows its month, not "delayed" (${when})`);
     else ok(/^(delayed|closed)$/.test(when), `${tag}: ${k} card says delayed or closed (${when})`);
   }
+  // r6: on the economy page too, each label hangs right under ITS blob (unless pushed below a neighbour) and is bright enough
+  const eg = JSON.parse(dec(attr(L, /<div class="tags"[^>]*data-geo="([^"]*)"/) || "[]")).filter(Boolean);
+  ok(eg.length === e.groups.length && eg.every(([top, low]) => top <= low && top >= low - 12), `${tag}: every economy-page label hangs right under its blob (${eg.map(g => g[0] + "/" + g[1]).join(" ")})`);
+  ok(eg.every(g => g[2] >= 0.7), `${tag}: economy-page labels are bright enough to read (${eg.map(g => g[2]).join(" ")})`);
   ok(new RegExp(`class="tags"[^>]*>(<span[^>]*>[^<]+<\\/span>){${e.groups.length}}`).test(L), `${tag}: one label per blob (${e.groups.length})`);
   for (const K of keys) {
     const g = e.groups.find(x => x.key === K), H = dom(`g_${K}_${SIZE}`);
@@ -108,7 +112,13 @@ for (const SIZE of ["390,844", "1440,900"]) {
   for (const [l, r, top, , blobBot] of geo) ok(top <= blobBot && top >= blobBot - 16, `${tag} front: an economy label hangs right under ITS blob (label top ${top}px, blob bottom ${blobBot}px)`);
   for (let k = 1; k < geo.length; k++) ok(geo[k][0] >= geo[k - 1][1] || geo[k][3] >= geo[k - 1][2] || geo[k][2] <= geo[k - 1][3], `${tag} front: economy labels ${k - 1}/${k} do not overlap`);
   if (tag === "phone") ok(geo.every(g => g[5] >= 21.5 && g[6] >= 9), `${tag} front: economy blobs radius >= 22px, labels >= 9px (${geo.map(g => g[5] + "/" + g[6]).join(" ")})`);
-  const Sm = dom("same_" + SIZE), bt = +attr(Sm, /data-bridge-tests="(\d+)"/), bb = +attr(Sm, /data-bridged="(\d+)"/);
+  // r5: the economy row sits on its own shelf (a faint band + top hairline behind the wax): every economy blob and label inside it
+  const shelf = (attr(F, /data-shelf="([^"]*)"/) || "").split(",").map(Number);
+  ok(shelf.length === 2 && shelf[1] > shelf[0] && geo.every(([, , , bot, blobBot, R]) => bot >= shelf[0] && blobBot + 2 * R <= shelf[1]), `${tag} front: every economy blob and label sits on the economy shelf (${shelf.join("-")}px; ${geo.map(g => g[3] + "-" + (g[4] + 2 * g[5])).join(" ")})`);
+  const Sm = dom("same_" + SIZE);
+  ok(+attr(Sm, /data-shelf-line="(\d+)"/) >= 3, `${tag} front: the shelf's top hairline is drawn behind the row (${attr(Sm, /data-shelf-line="(\d+)"/)} of 9 points lit)`);
+  ok(geo.every(g => g[7] >= 0.7), `${tag} front: economy labels are bright enough to read (luminance ${geo.map(g => g[7]).join(" ")})`);
+  const bt = +attr(Sm, /data-bridge-tests="(\d+)"/), bb = +attr(Sm, /data-bridged="(\d+)"/);
   if (tag === "phone") ok(bt > 0 && bb === 0, `${tag} front: eight equal economy blobs a lane apart never bridge (${bb} of ${bt} close pairs fused)`);
   if (tag === "phone") ok(+attr(dom("samelamp_" + SIZE), /data-core-r="(\d+)"/) >= 28, `${tag}: at full size every economy blob is >= 28px radius, two rows of four (r3: eight 49px lanes left ~17px blobs) (${attr(dom("samelamp_" + SIZE), /data-core-r="(\d+)"/)}px)`);
   for (const [Lx, what] of [[L, "today's data"], [dom("samelamp_" + SIZE), "eight biggest blobs"]])

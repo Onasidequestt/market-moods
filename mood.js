@@ -215,7 +215,14 @@
     return { slow: false, live: false, label: "closed \u00b7 as of " + dow + " " + clock };
   }
 
-  const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
+  // a label's ink: a blob colour lifted toward white until its luminance is >= 0.75, so a pink/red label still
+  // reads on the dark lamp (r5). Both pages' economy labels use it.
+  function labelTint(c) {
+    const t = c.map(v => v * 0.45 + 0.55), L = 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2], k = L < 0.75 ? (0.75 - L) / (1 - L) : 0;
+    return t.map(v => v + (1 - v) * k);
+  }
+
+  const api = { colour, labelTint, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
                 against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER,
                 fear, fearWord, volumeLevel, pulseAmp, volumeWord, avgSeries, sectorHue, sectorShort, scrubPos,
                 econMove, econChop, econSlow, econGroupPct, econAsOf };

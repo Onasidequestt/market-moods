@@ -417,7 +417,7 @@
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
       });
-      L.tagX = cx / aspect; L.tagY = low - 0.035;
+      L.tagX = cx / aspect; L.tagY = low; L.low = low;   // the blob's lowest wax; ui() hangs the label under it (L.low: read by the check, independent of tagY)
     });
     const rs = lanes.filter(L => L.r != null).map(L => L.r); if (rs.length === lanes.length && rs.length) canvas.dataset.coreR = Math.round(Math.min(...rs) * innerHeight);   // read by economy-check.sh: the smallest blob's core radius, CSS px
     canvas.dataset.drops = Math.min(n, NB);   // read by economy-check.sh: drops the shader can actually draw (slots past NB are dropped by GL)
@@ -608,10 +608,11 @@
       g.el.querySelector(".lvl").textContent = groupWhenLabel(g, now);
     });
     const tags = $("tags");
-    const ws = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetWidth : 0);   // read every width first, then write
+    const ws = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetWidth : 0), hs = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetHeight : 0);   // read every size first, then write
     lanes.forEach((L, i) => { if (L.tagX == null || !tags.children[i]) return; const s = tags.children[i];
       const half = ws[i] / 2 / innerWidth, g = 24 / innerWidth;   // a 24px gutter: no label runs to the screen edge
-      s.style.left = (Math.min(1 - half - g, Math.max(half + g, L.tagX)) * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%"; s.style.visibility = "visible"; });
+      s.style.left = (Math.min(1 - half - g, Math.max(half + g, L.tagX)) * 100).toFixed(2) + "%"; s.style.bottom = Math.max(0, L.tagY * innerHeight - hs[i] - 4).toFixed(1) + "px"; s.style.visibility = "visible";
+      s.style.color = hex(Mood.labelTint(L.col)); });   // r6: a label hangs its top 4px under ITS blob and wears the blob's tint (as on the front page)
     // a label that would touch one already placed drops below it (narrow phones: 7 labels in 390px)
     const placed = [];
     for (const s of tags.children) { if (s.style.visibility !== "visible") continue;
@@ -622,6 +623,9 @@
         s.style.bottom = Math.max(0, innerHeight - hit.bottom - r.height - 2) + "px"; r = s.getBoundingClientRect();
       }
       placed.push(r); }
+    // read by economy-check.sh: each label's top and its blob's lowest wax (px from the bottom), and the label's luminance
+    tags.dataset.geo = JSON.stringify(lanes.map((L, i) => { const s = tags.children[i]; if (!s || L.low == null) return null; const r = s.getBoundingClientRect(), c = getComputedStyle(s).color.match(/[\d.]+/g).map(v => v / 255);
+      return [Math.round(innerHeight - r.top), Math.round(L.low * innerHeight), +((0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) * (c.length > 3 ? c[3] * 255 : 1)).toFixed(3)]; }));   // alpha counts: a 66% grey is dim
     // the biggest single mover among market-traded members, said in words: real data, never a slogan
     const fast = G.flatMap(g => g.members.filter(m => !Mood.econSlow(m)));
     const big = fast.slice().sort((a, b) => Math.abs(b.mv.pct) - Math.abs(a.mv.pct))[0];

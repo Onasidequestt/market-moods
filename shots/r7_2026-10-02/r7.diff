@@ -1,0 +1,191 @@
+diff --git a/economy-check.sh b/economy-check.sh
+index 069353c..ebdb134 100644
+--- a/economy-check.sh
++++ b/economy-check.sh
+@@ -67,6 +67,10 @@ for (const SIZE of ["390,844", "1440,900"]) {
+     if (g && g.members.every(M.econSlow)) ok(/^monthly · \w{3} \d{4}$/.test(when), `${tag}: the ${k} card (slow numbers only) shows its month, not "delayed" (${when})`);
+     else ok(/^(delayed|closed)$/.test(when), `${tag}: ${k} card says delayed or closed (${when})`);
+   }
++  // r6: on the economy page too, each label hangs right under ITS blob (unless pushed below a neighbour) and is bright enough
++  const eg = JSON.parse(dec(attr(L, /<div class="tags"[^>]*data-geo="([^"]*)"/) || "[]")).filter(Boolean);
++  ok(eg.length === e.groups.length && eg.every(([top, low]) => top <= low && top >= low - 12), `${tag}: every economy-page label hangs right under its blob (${eg.map(g => g[0] + "/" + g[1]).join(" ")})`);
++  ok(eg.every(g => g[2] >= 0.7), `${tag}: economy-page labels are bright enough to read (${eg.map(g => g[2]).join(" ")})`);
+   ok(new RegExp(`class="tags"[^>]*>(<span[^>]*>[^<]+<\\/span>){${e.groups.length}}`).test(L), `${tag}: one label per blob (${e.groups.length})`);
+   for (const K of keys) {
+     const g = e.groups.find(x => x.key === K), H = dom(`g_${K}_${SIZE}`);
+@@ -108,7 +112,13 @@ for (const SIZE of ["390,844", "1440,900"]) {
+   for (const [l, r, top, , blobBot] of geo) ok(top <= blobBot && top >= blobBot - 16, `${tag} front: an economy label hangs right under ITS blob (label top ${top}px, blob bottom ${blobBot}px)`);
+   for (let k = 1; k < geo.length; k++) ok(geo[k][0] >= geo[k - 1][1] || geo[k][3] >= geo[k - 1][2] || geo[k][2] <= geo[k - 1][3], `${tag} front: economy labels ${k - 1}/${k} do not overlap`);
+   if (tag === "phone") ok(geo.every(g => g[5] >= 21.5 && g[6] >= 9), `${tag} front: economy blobs radius >= 22px, labels >= 9px (${geo.map(g => g[5] + "/" + g[6]).join(" ")})`);
+-  const Sm = dom("same_" + SIZE), bt = +attr(Sm, /data-bridge-tests="(\d+)"/), bb = +attr(Sm, /data-bridged="(\d+)"/);
++  // r5: the economy row sits on its own shelf (a faint band + top hairline behind the wax): every economy blob and label inside it
++  const shelf = (attr(F, /data-shelf="([^"]*)"/) || "").split(",").map(Number);
++  ok(shelf.length === 2 && shelf[1] > shelf[0] && geo.every(([, , , bot, blobBot, R]) => bot >= shelf[0] && blobBot + 2 * R <= shelf[1]), `${tag} front: every economy blob and label sits on the economy shelf (${shelf.join("-")}px; ${geo.map(g => g[3] + "-" + (g[4] + 2 * g[5])).join(" ")})`);
++  const Sm = dom("same_" + SIZE);
++  ok(+attr(Sm, /data-shelf-line="(\d+)"/) >= 3, `${tag} front: the shelf's top hairline is drawn behind the row (${attr(Sm, /data-shelf-line="(\d+)"/)} of 9 points lit)`);
++  ok(geo.every(g => g[7] >= 0.7), `${tag} front: economy labels are bright enough to read (luminance ${geo.map(g => g[7]).join(" ")})`);
++  const bt = +attr(Sm, /data-bridge-tests="(\d+)"/), bb = +attr(Sm, /data-bridged="(\d+)"/);
+   if (tag === "phone") ok(bt > 0 && bb === 0, `${tag} front: eight equal economy blobs a lane apart never bridge (${bb} of ${bt} close pairs fused)`);
+   if (tag === "phone") ok(+attr(dom("samelamp_" + SIZE), /data-core-r="(\d+)"/) >= 28, `${tag}: at full size every economy blob is >= 28px radius, two rows of four (r3: eight 49px lanes left ~17px blobs) (${attr(dom("samelamp_" + SIZE), /data-core-r="(\d+)"/)}px)`);
+   for (const [Lx, what] of [[L, "today's data"], [dom("samelamp_" + SIZE), "eight biggest blobs"]])
+diff --git a/economy.html b/economy.html
+index b0d2389..804c4f2 100644
+--- a/economy.html
++++ b/economy.html
+@@ -417,7 +417,7 @@
+         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
+         n++;
+       });
+-      L.tagX = cx / aspect; L.tagY = low - 0.035;
++      L.tagX = cx / aspect; L.tagY = low; L.low = low;   // the blob's lowest wax; ui() hangs the label under it (L.low: read by the check, independent of tagY)
+     });
+     const rs = lanes.filter(L => L.r != null).map(L => L.r); if (rs.length === lanes.length && rs.length) canvas.dataset.coreR = Math.round(Math.min(...rs) * innerHeight);   // read by economy-check.sh: the smallest blob's core radius, CSS px
+     canvas.dataset.drops = Math.min(n, NB);   // read by economy-check.sh: drops the shader can actually draw (slots past NB are dropped by GL)
+@@ -608,10 +608,11 @@
+       g.el.querySelector(".lvl").textContent = groupWhenLabel(g, now);
+     });
+     const tags = $("tags");
+-    const ws = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetWidth : 0);   // read every width first, then write
++    const ws = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetWidth : 0), hs = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetHeight : 0);   // read every size first, then write
+     lanes.forEach((L, i) => { if (L.tagX == null || !tags.children[i]) return; const s = tags.children[i];
+       const half = ws[i] / 2 / innerWidth, g = 24 / innerWidth;   // a 24px gutter: no label runs to the screen edge
+-      s.style.left = (Math.min(1 - half - g, Math.max(half + g, L.tagX)) * 100).toFixed(2) + "%"; s.style.bottom = (Math.max(0, L.tagY) * 100).toFixed(2) + "%"; s.style.visibility = "visible"; });
++      s.style.left = (Math.min(1 - half - g, Math.max(half + g, L.tagX)) * 100).toFixed(2) + "%"; s.style.bottom = Math.max(0, L.tagY * innerHeight - hs[i] - 4).toFixed(1) + "px"; s.style.visibility = "visible";
++      s.style.color = hex(Mood.labelTint(L.col)); });   // r6: a label hangs its top 4px under ITS blob and wears the blob's tint (as on the front page)
+     // a label that would touch one already placed drops below it (narrow phones: 7 labels in 390px)
+     const placed = [];
+     for (const s of tags.children) { if (s.style.visibility !== "visible") continue;
+@@ -622,6 +623,9 @@
+         s.style.bottom = Math.max(0, innerHeight - hit.bottom - r.height - 2) + "px"; r = s.getBoundingClientRect();
+       }
+       placed.push(r); }
++    // read by economy-check.sh: each label's top and its blob's lowest wax (px from the bottom), and the label's luminance
++    tags.dataset.geo = JSON.stringify(lanes.map((L, i) => { const s = tags.children[i]; if (!s || L.low == null) return null; const r = s.getBoundingClientRect(), c = getComputedStyle(s).color.match(/[\d.]+/g).map(v => v / 255);
++      return [Math.round(innerHeight - r.top), Math.round(L.low * innerHeight), +((0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) * (c.length > 3 ? c[3] * 255 : 1)).toFixed(3)]; }));   // alpha counts: a 66% grey is dim
+     // the biggest single mover among market-traded members, said in words: real data, never a slogan
+     const fast = G.flatMap(g => g.members.filter(m => !Mood.econSlow(m)));
+     const big = fast.slice().sort((a, b) => Math.abs(b.mv.pct) - Math.abs(a.mv.pct))[0];
+diff --git a/index.html b/index.html
+index f6f555d..d46dd5a 100644
+--- a/index.html
++++ b/index.html
+@@ -68,7 +68,7 @@
+   .tags span.econ { font-size: 10px; }
+   @media (max-width: 480px) { .tags span.econ { font-size: 9px; letter-spacing: .03em; } }
+   .fam { position: fixed; inset: 0; pointer-events: none; }
+-  .fam span { position: absolute; transform: translate(-50%, 0); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2); opacity: .85; white-space: nowrap;
++  .fam span { position: absolute; transform: translate(-50%, 0); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink); opacity: .9; white-space: nowrap;
+     padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, .14); }
+   .fam.stacked { display: none; }   /* phone: the two rows split stocks (top) from the economy (bottom); a caption there hit the index labels */
+   @media (max-width: 480px) { .tags span.econ { white-space: normal; max-width: 12.5vw; font-size: 9.5px; letter-spacing: 0; line-height: 1.15; text-align: center; } }   /* fits its 1/8 lane: no label leans on a neighbour, so none is pushed down */   /* "CENTRAL BANKS" wraps inside its lane, never into a neighbour */
+@@ -123,7 +123,7 @@
+   .idx.hasdoor .look { display: inline; }
+   .idx.hasdoor { cursor: pointer; }
+   .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+-    color: var(--ink-2); white-space: nowrap; transition: bottom .25s linear; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
++    color: var(--ink); white-space: nowrap; transition: bottom .25s linear; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }   /* r6: stock labels in full ink; economy labels wear their blob's tint */
+ 
+   footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+   .days { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+@@ -544,12 +544,12 @@
+   // gets the core alone, so the shader always links: 2 vec3 arrays of N plus ~8 other uniforms must fit
+   const ECON_DROPS = gl && gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) < 2 * (4 * DROPS + ECON_MAX * 2) + 8 ? 1 : 2;
+   const N = 4 * DROPS + ECON_MAX * ECON_DROPS;
+-  let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat, uFear;
++  let prog, uRes, uBalls, uCols, uBgTop, uBgBot, uHeat, uFear, uShelf;
+   if (gl) {
+     const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
+     const fs = `precision mediump float;
+       uniform vec2 uRes; uniform vec3 uBalls[${N}]; uniform vec3 uCols[${N}];
+-      uniform vec3 uBgTop; uniform vec3 uBgBot; uniform vec3 uHeat; uniform float uFear;
++      uniform vec3 uBgTop; uniform vec3 uBgBot; uniform vec3 uHeat; uniform float uFear; uniform vec2 uShelf;
+       void main(){
+         vec2 q = gl_FragCoord.xy / uRes.y;
+         float f = 0.0, ws = 0.0, fe = 0.0, fg = 0.0; int g = -1; vec3 c = vec3(0.0);
+@@ -567,6 +567,11 @@
+         // fear gauge: a nervous VIX widens the lamp's warm floor glow on top of the mood's own
+         // colour — never its own colour (0 fear = exactly the old look, bit-for-bit)
+         bg += uHeat * (0.22 + 0.5 * uFear) * pow(1.0 - y, 3.0);
++        // the economy row's shelf (r5): a faint band behind that row, a hairline along its top, both BEHIND the wax
++        // (a stock blob that dips low covers the line instead of being cut by it). uShelf = (0,0) draws nothing.
++        float px = 1.0 / uRes.y;
++        bg += vec3(0.045) * smoothstep(uShelf.x - 10.0 * px, uShelf.x + 10.0 * px, y) * (1.0 - smoothstep(uShelf.y - px, uShelf.y + px, y));
++        bg += vec3(0.16) * (1.0 - smoothstep(0.0, 1.5 * px, abs(y - uShelf.y))) * step(px, uShelf.y);
+         float e = 0.035;
+         float body = smoothstep(1.0 - e, 1.0 + e, f);
+         float glow = smoothstep(0.08, 1.0, f) * (1.0 - body);
+@@ -586,7 +591,7 @@
+     uRes = gl.getUniformLocation(prog, "uRes"); uBalls = gl.getUniformLocation(prog, "uBalls");
+     uCols = gl.getUniformLocation(prog, "uCols"); uBgTop = gl.getUniformLocation(prog, "uBgTop");
+     uBgBot = gl.getUniformLocation(prog, "uBgBot"); uHeat = gl.getUniformLocation(prog, "uHeat");
+-    uFear = gl.getUniformLocation(prog, "uFear");
++    uFear = gl.getUniformLocation(prog, "uFear"); uShelf = gl.getUniformLocation(prog, "uShelf");
+   }
+   function resize() {
+     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+@@ -720,7 +725,10 @@
+     const glide = (cur, want) => cur == null || !isFinite(cur) || Math.abs(want - cur) > 0.04 ? want : cur + (want - cur) * 0.25;   // a caption trails its blob by a few frames, never by a screen
+     const capY = Math.max(top[0], econ.length ? top[1] : 0) + 0.04;   // both captions on one line, over the tallest wax of either family
+     fam.iY = glide(fam.iY, Math.min(capY, free[1] - 0.006));   // never into the mood block above the stage
+-    fam.eY = stacked && !fam.stacked ? glide(fam.eY, top[1] + 0.025) : fam.iY;   // wide + two rows: ECONOMY rides just over its own row's tallest wax, never up among the stocks
++    // the economy row's shelf: from under its lowest possible label to just over its tallest possible wax (fixed per layout, not per frame)
++    const eR = stacked && aspect < 0.8 ? 22 / innerHeight : Math.min(baseR * 1.4 * 0.75, wE * 0.36) * 1.23;
++    fam.shelf = stacked ? [bandE[0] - eR - 26 / innerHeight, bandE[1] + eR + 10 / innerHeight] : null;
++    fam.eY = stacked && !fam.stacked ? fam.shelf[1] : fam.iY;   // wide: the ECONOMY caption sits ON its shelf's top line
+     for (; n < N; n++) balls[n * 3 + 2] = 0;   // unused slots: radius 0 adds nothing to the field
+     const heat = Mood.colour(avgPctShown);
+     gl.uniform2f(uRes, W, H);
+@@ -728,7 +736,7 @@
+     gl.uniform3f(uBgTop, 0.035, 0.02, 0.055);
+     gl.uniform3f(uBgBot, 0.07, 0.035, 0.08);
+     gl.uniform3f(uHeat, heat[0], heat[1], heat[2]);
+-    gl.uniform1f(uFear, fearShown);
++    gl.uniform1f(uFear, fearShown); gl.uniform2f(uShelf, fam.shelf ? fam.shelf[0] : 0, fam.shelf ? fam.shelf[1] : 0);
+     gl.drawArrays(gl.TRIANGLES, 0, 3);
+     if (PROBE && ++probeN <= 40) probeBridges();   // capped: a readPixels stalls the GPU (uncapped, headless hung)
+   }
+@@ -742,6 +750,9 @@
+       if (Math.hypot(A.hx - B.hx, A.hy - B.hy) >= 2.38 * Math.min(A.r, B.r)) continue;
+       t++; if (lum((A.hx + B.hx) / 2, (A.hy + B.hy) / 2) > 0.4 * Math.min(lum(A.hx, A.hy), lum(B.hx, B.hy))) b++; }   // wax body >= ~0.55 of its core, glow alone <= ~0.2
+     D.bridgeTests = t; D.bridged = b;
++    if (fam.shelf) { let lit = 0; const y = fam.shelf[1], d = 3 / innerHeight, aspect = canvas.width / H;   // the shelf's top hairline is drawn: brighter than 3px above AND below it (the band's own edge is not a line) at most of 9 points
++      for (let k = 1; k <= 9; k++) { const x = aspect * k / 10, c = lum(x, y); if (c - lum(x, y + d) >= 6 && c - lum(x, y - d) >= 6) lit++; }
++      D.shelfLine = Math.max(+D.shelfLine || 0, lit); }
+   }
+ 
+   let sparkDay = null;
+@@ -791,10 +802,12 @@
+       }
+       placed.push(B); });
+     for (const B of boxes) if (B) { B.s.style.left = (B.x / W_ * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible"; }
+-    econ.forEach((L, k) => { const B = boxes[4 + k]; if (B) B.s.style.color = hex(L.col.map(v => v * 0.45 + 0.55)); });   // r4: an economy label wears its blob's colour (lightened), so a label's row reads at a glance
++    econ.forEach((L, k) => { const B = boxes[4 + k]; if (B) B.s.style.color = hex(Mood.labelTint(L.col)); });   // r4: an economy label wears its blob's colour (lightened), so a label's row reads at a glance
+     // read by economy-check.sh: each economy label's box and its blob's bottom/radius, CSS px from the bottom, this frame
+     tags.dataset.geo = JSON.stringify(econ.map((L, k) => { const B = boxes[4 + k]; return B && L.r != null ?
+-      [Math.round(B.l), Math.round(B.r), Math.round(B.b + B.h), Math.round(B.b), Math.round((L.hy - L.r) * H_), Math.round(L.r * H_ * 10) / 10, parseFloat(getComputedStyle(B.s).fontSize)] : null; }));
++      [Math.round(B.l), Math.round(B.r), Math.round(B.b + B.h), Math.round(B.b), Math.round((L.hy - L.r) * H_), Math.round(L.r * H_ * 10) / 10, parseFloat(getComputedStyle(B.s).fontSize),
++       +((c => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) * (c.length > 3 ? c[3] * 255 : 1))(getComputedStyle(B.s).color.match(/[\d.]+/g).map(v => v / 255))).toFixed(3)] : null; }));
++    tags.dataset.shelf = fam.shelf ? fam.shelf.map(v => Math.round(v * H_)).join(",") : "";   // the economy row's shelf, px from the bottom
+     // the two family captions (Stocks / Economy): above each family on a wide screen, at the left of each row on a phone
+     const fm = $("fam");
+     if (fm) { fm.hidden = !econ.length || fam.iY == null;   // never shown before draw() has given it a place
+diff --git a/mood.js b/mood.js
+index 0734f20..51c4bc2 100644
+--- a/mood.js
++++ b/mood.js
+@@ -215,7 +215,14 @@
+     return { slow: false, live: false, label: "closed \u00b7 as of " + dow + " " + clock };
+   }
+ 
+-  const api = { colour, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
++  // a label's ink: a blob colour lifted toward white until its luminance is >= 0.75, so a pink/red label still
++  // reads on the dark lamp (r5). Both pages' economy labels use it.
++  function labelTint(c) {
++    const t = c.map(v => v * 0.45 + 0.55), L = 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2], k = L < 0.75 ? (0.75 - L) / (1 - L) : 0;
++    return t.map(v => v + (1 - v) * k);
++  }
++
++  const api = { colour, labelTint, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
+                 against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER,
+                 fear, fearWord, volumeLevel, pulseAmp, volumeWord, avgSeries, sectorHue, sectorShort, scrubPos,
+                 econMove, econChop, econSlow, econGroupPct, econAsOf };
