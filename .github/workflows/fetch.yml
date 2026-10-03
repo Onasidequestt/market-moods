@@ -34,4 +34,8 @@ jobs:
         with: { node-version: "20" }
       - run: python3 fetch.py --selfcheck
       - run: tools/loop.sh fetch.yml 600 market tools/market_round.sh
-        env: { GH_TOKEN: "${{ github.token }}", LOOP_FORCE: "${{ github.event.inputs.force }}" }
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          LOOP_FORCE: "${{ github.event.inputs.force }}"
+          CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
