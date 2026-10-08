@@ -9,6 +9,7 @@
 # usage: sh economy-check.sh      (serves this folder on 127.0.0.1:8768 while it runs)
 cd "$(dirname "$0")" || exit 2
 B="$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-152.0.7977.42/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+[ -x "$B" ] || B="$HOME/Library/Caches/ms-playwright/chromium_headless_shell-1148/chrome-mac/headless_shell"   # 10-07: the puppeteer cache was cleaned off the disk; Playwright's shell is the same binary
 [ -x "$B" ] || { echo "✘ economy-check: chrome-headless-shell not found"; exit 2; }
 [ -f data/economy.json ] || { echo "✘ economy-check: data/economy.json missing (run: python3 fetch.py --economy)"; exit 2; }
 T=$(mktemp -d); mkdir -p "$T/nodata" "$T/same/data"; cp economy.html mood.js "$T/nodata/"
@@ -39,6 +40,7 @@ for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8768/.econ-same-check/economy.html?probe" "$T/samelamp_$SIZE"
 done
 shoot 390,568 "http://127.0.0.1:8768/.econ-same-check/economy.html?probe" "$T/short"   # r4: a short phone, where two rows would not fit
+shoot 1000,560 "http://127.0.0.1:8768/economy.html#g=shipping" "$T/shortdesk"   # 10-07 (Clark): a laptop window not full height, inside the 18-member group
 mkdir -p shots/economy; for K in $KEYS; do cp "$T/g_${K}_390,844.png" "shots/economy/${K}_phone.png"; done
 cp "$T/lamp_390,844.png" shots/economy/lamp_phone.png; cp "$T/lamp_1440,900.png" shots/economy/lamp_desktop.png
 node - "$T" "$KEYS" <<'EOJ'
@@ -129,5 +131,12 @@ for (const SIZE of ["390,844", "1440,900"]) {
 }
 const Sh = dom("short");   // a 568px phone: every blob drawn, none cut by an edge (two rows fall back to one when they cannot both move)
 ok(attr(Sh, /data-drops="(\d+)"/) == 40 && +attr(Sh, /data-edge-tests="(\d+)"/) > 0 && attr(Sh, /data-edge-hits="(\d+)"/) === "0", `short phone: 8 blobs drawn, none cut by an edge (${attr(Sh, /data-drops="(\d+)"/)} drops, ${attr(Sh, /data-edge-hits="(\d+)"/)} of ${attr(Sh, /data-edge-tests="(\d+)"/)} frames)`);
+// 10-07 (Clark "out of control"): a 1000x560 window inside shipping (18 members). Before: the member list ate the stage
+// (R=40) while every blob kept its 16px floor — 18 blobs piled on the text. Now the footer scrolls (R>=60) and the radii
+// scale down together to fit the cell: every blob whole inside it, their area under 60% of it, none below the stage.
+const Sd = dom("shortdesk"), cellD = (attr(Sd, /data-cell="([^"]+)"/) || "").split(",").map(Number), blobsD = (attr(Sd, /data-blobs="([^"]*)"/) || "").split(";").filter(Boolean).map(b => b.split(",").map(Number));
+const [dcx, dcy, dR] = cellD, outD = blobsD.filter(([x, y, r]) => Math.hypot(x - dcx, y - dcy) + r > dR + 1).length, areaD = blobsD.reduce((a, [, , r]) => a + r * r, 0) / (dR * dR || 1);
+ok(blobsD.length === 18 && dR >= 60, `short desktop inside shipping: 18 blobs on a stage of radius >= 60px (${blobsD.length} blobs, R=${dR})`);
+ok(blobsD.length === 18 && outD === 0 && areaD <= 0.6, `short desktop inside shipping: every blob whole inside the cell, area <= 60% of it (${outD} outside, ${(areaD * 100).toFixed(0)}%)`);
 console.log(`${bad ? "✘" : "✓"} economy-check: ${n} checks, ${bad} failed`); process.exit(bad ? 1 : 0);
 EOJ

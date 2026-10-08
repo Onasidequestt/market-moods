@@ -278,7 +278,7 @@
     <dt>Fear</dt><dd id="helpFear">The VIX, the market's own fear gauge.</dd>
     <dt>Heartbeat</dt><dd id="helpBeat">The lamp breathes with how much is trading.</dd>
     <dt>Replay</dt><dd>When the market is closed, drag the dot on the line at the bottom to scrub back and forth through that trading day and watch the lamp move. The dot and the line take the mood colour, the dot glows in time with the heartbeat, the time floats above it, and the faint wavy line behind the track is the day's average move.</dd>
-    <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. Companies cluster by sector — tech, energy, health care and the rest. Each cluster sits in a soft halo of its own fixed sector colour, the blobs inside keep the move colour, and the halo breathes with the heartbeat. A name tag on a dark pill sits beside each cluster big enough to label; on a phone the smallest clusters go unlabelled. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500). The S&amp;P 500's biggest companies also ride as specks inside its blob in the lamp view.</dd>
+    <dt>Inside</dt><dd>The Dow, S&amp;P 500 and Nasdaq have their companies inside them now (the Russell 2000 does not yet: no member list we can use). Tap a blob, its label or "Look inside" to open it: one blob per company, with the same colour, height and motion rules as the index (inside, the top and bottom of the cell are a 2.5% move: single companies move more than an index). Size is the company's market value, or its move if you switch. Companies cluster by sector — tech, energy, health care and the rest. Each cluster sits in a soft halo of its own fixed sector colour, the blobs inside keep the move colour, and the halo breathes with the heartbeat. A name tag on a dark pill sits beside each cluster big enough to label; on a phone the smallest clusters go unlabelled. A white ring marks a company moving against the index. The Dow has only 30 members, so it always shows all 30; the S&amp;P 500 and Nasdaq show their top 50/100 or top 500 by market value (Nasdaq has 3,000+ listings, up to the top 500).</dd>
   </dl>
   <div class="ramp" id="ramp"></div>
   <div class="ramp-l"><span>−1%</span><span>−0.5%</span><span>0</span><span>+0.5%</span><span>+1%</span></div>
@@ -461,7 +461,7 @@
       $("timeline").hidden = mode !== "replay";
       $("days").hidden = mode !== "replay" || days.length < 2;   // before the first draw: it measures the footer
       step(0); ui(); if (gl) draw(); // numbers and lamp show at once, not after the first slow frames
-      // eager only for sp500 (its lamp specks preview, ~290 KB gzip); the other three load lazily,
+      // eager only for sp500 (its door opens first, ~290 KB gzip); the other three load lazily,
       // only once their door is opened, so the lamp page never pulls all four company files up front
       if (firstLoad) CELL_KEYS.forEach(k => k !== "sp500" && probeCell(k));
       if (!(cellState.sp500 && cellState.sp500.comp) || mode === "live") loadCompanies("sp500");
@@ -618,7 +618,7 @@
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     if (data && mode !== "none") step(dt);
     if (gl && lanes.length && !inCell) draw();
-    if (lanes.length) { if (inCell) { cellStep(dt); cellDraw(); } else specksDraw(); }
+    if (lanes.length) { if (inCell) { cellStep(dt); cellDraw(); } else lampClear(); }
     if ((uiT += dt) > 0.1 && data) { uiT = 0; ui(); cellUi(); }
     // exposed for browser-check.sh: the dialog's live scrollTop, however/whenever the browser
     // actually applies its autofocus scroll — not just what we set the instant it opens.
@@ -852,7 +852,7 @@
   const compErr = () => !!(cellState[cellKey] || {}).err;
   const cellNodes = new Map();                  // symbol -> node; positions persist across switches
   const cv = $("cell"), cx2 = cv.getContext("2d");
-  let cvDpr = 1, cellG = null, specksN = 0;
+  let cvDpr = 1, cellG = null;
   function resizeCell() { cvDpr = Math.min(window.devicePixelRatio || 1, 2); cv.width = Math.round(innerWidth * cvDpr); cv.height = Math.round(innerHeight * cvDpr); }
   addEventListener("resize", resizeCell); resizeCell();
   const hashS = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 100003; return h / 100003; };
@@ -895,7 +895,7 @@
     readoutDoors();
     if (key !== cellKey) return;
     cellUi();
-    if (lanes.length) inCell ? cellDraw() : specksDraw();   // show at once, not on the next frame
+    if (lanes.length) inCell ? cellDraw() : lampClear();   // show at once, not on the next frame
   }
   const wantCellOnLoad = (() => {   // hash can name the index to open: #cell&idx=dow&top=100&size=move
     const h = location.hash;
@@ -1127,38 +1127,11 @@
     cv.dataset.sectors = cellSectors.length;   // read by browser-check.sh: organ count = distinct sectors shown
   }
 
-  // in the lamp: the S&P 500's biggest companies ride inside its blob as specks.
-  // ponytail: specks stay S&P-only so the lamp never eager-fetches all four company files (the
-  // ask was the INSIDE view for all four; this preview is a bonus). Ceiling: no lamp preview for
-  // Dow/Nasdaq/Russell. Upgrade path: a tiny top-50-symbols-only file per index, fetched once and
-  // cheap enough to load eagerly like sp500's.
-  function specksDraw() {
-    const ctx = cx2; ctx.setTransform(cvDpr, 0, 0, cvDpr, 0, 0); ctx.clearRect(0, 0, innerWidth, innerHeight);
-    specksN = 0;
-    const c = cellState.sp500 && cellState.sp500.comp; if (!c) { cv.dataset.specks = 0; return; }
-    const S = c.sessions.find(x => x.date === curDay);
-    if (!S || !gl || mode === "none") { cv.dataset.specks = 0; return; }
-    const H = innerHeight, b = DROPS * 3;                       // lane 1 (S&P 500), drop 0 = its core
-    const X = balls[b] * H, Y = H - balls[b + 1] * H, R = balls[b + 2] * H;
-    if (R < 18) { cv.dataset.specks = 0; return; }
-    const p = Math.min(pos, S.t.length - 1);
-    const list = [];
-    for (let k = 0; k < c.companies.length && list.length < 50; k++) if (S.m[k]) list.push({ c: c.companies[k], m: S.m[k] });
-    const top = list.length ? list[0].c.cap : 1;
-    const L = lanes[1];
-    for (const x of list) {
-      const pct = Mood.movePct(x.m, p), sd = hashS(x.c.s);
-      const oy = -(Mood.heightIn(pct) - 0.5) * 2 * R * 0.55;
-      const ox = (sd - 0.5) * 2 * Math.sqrt(Math.max(0, (R * 0.7) ** 2 - oy * oy));
-      const w = Math.sin(L.ph * 1.3 + sd * 20) * R * 0.04;
-      const r = Math.max(1.3, R * 0.12 * Math.sqrt(x.c.cap / top));
-      cx2.beginPath(); cx2.arc(X + ox + w, Y + oy - w, r, 0, Math.PI * 2);
-      cx2.fillStyle = rgba(Mood.colour(pct), 1); cx2.fill();
-      cx2.lineWidth = 1; cx2.strokeStyle = "rgba(10,6,16,.6)"; cx2.stroke();
-      specksN++;
-    }
-    cv.dataset.specks = specksN;
-    cv.dataset.core = `${Math.round(X)},${Math.round(Y)},${Math.round(R)}`;   // read by browser-check.sh
+  // in the lamp the cell canvas is empty: no company specks inside any index blob, so all four
+  // blobs look alike (Clark 10-07); the companies show only in the inside view
+  function lampClear() {
+    cx2.setTransform(cvDpr, 0, 0, cvDpr, 0, 0); cx2.clearRect(0, 0, innerWidth, innerHeight);
+    cv.dataset.specks = 0;   // read by browser-check.sh: the lamp draws no specks
   }
 
   function cellUi() {

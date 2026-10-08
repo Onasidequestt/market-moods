@@ -9,6 +9,7 @@
 # usage: sh browser-check.sh     (serves this folder on 127.0.0.1:8766 while it runs)
 cd "$(dirname "$0")" || exit 2
 B="$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-152.0.7977.42/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+[ -x "$B" ] || B="$HOME/Library/Caches/ms-playwright/chromium_headless_shell-1148/chrome-mac/headless_shell"   # 10-07: the puppeteer cache was cleaned off the disk; Playwright's shell is the same binary
 [ -x "$B" ] || { echo "✘ browser-check: chrome-headless-shell not found"; exit 2; }
 T=$(mktemp -d); mkdir -p "$T/nodata"; cp index.html mood.js "$T/nodata/"
 # a browser with no page fullscreen (iPhone Safari): same page with requestFullscreen removed
@@ -204,21 +205,7 @@ tagd = re.search(r'id="tags"[^>]*>(.*?)</div>', okd, re.S)
 ntag = len(re.findall(r'<span[^>]*\bclass="door"', tagd[1])) if tagd else -1
 if ntag != ndoors_want: bad.append(f"{ntag} blob labels open an inside view, want {ndoors_want} (one per companies file on disk)")
 sk = re.search(r'id="cell"[^>]*data-specks="(\d+)"', okd)
-if not sk or int(sk[1]) != 50: bad.append(f"lamp: {sk and sk[1]} specks in the S&P 500 blob, want its 50 biggest companies")
-# ...and really painted: on an up day the S&P 500's wax is green, so warm (red/amber) pixels inside
-# its core are the falling companies' specks (on a down day: green pixels in red wax are the rising
-# ones). The page's own count above cannot prove that.
-sp_up = len(pcts) == 4 and pcts[1].startswith("+")
-core = re.search(r'id="cell"[^>]*data-core="(\d+),(\d+),(\d+)"', okd)
-im = Image.open(f"{t}/ok.png").convert("RGB"); W, H = im.size; sc = H / int(size.split(",")[1]); px = im.load(); warm = 0
-if core:
-    kx, ky, kr = (int(v) * sc for v in core.groups())
-    for y in range(int(ky - kr), int(ky + kr)):
-        for x in range(int(kx - kr), int(kx + kr)):
-            if 0 <= x < W and 0 <= y < H and math.hypot(x - kx, y - ky) < kr * 0.85:
-                r_, g_, b_ = px[x, y]
-                if (r_ > 150 and r_ - g_ > 60) if sp_up else (g_ > 150 and g_ - r_ > 60): warm += 1
-if warm < 12 * sc * sc: bad.append(f"lamp: {warm} against-colour pixels in the S&P 500 core: the companies' specks are not painted")
+if not sk or int(sk[1]) != 0: bad.append(f"lamp: {sk and sk[1]} specks in an index blob, want none (Clark 10-07: all four blobs alike)")
 ncd = open(f"{t}/nocomp.html").read()
 if 'class="idx hasdoor"' in ncd or 'class="incell"' in ncd: bad.append("no company file, yet the door/inside view shows")
 if re.search(r'<span[^>]*\bclass="door"', ncd): bad.append("no company file, yet a blob label is a door")

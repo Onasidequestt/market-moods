@@ -12,6 +12,7 @@
 # Screenshots with the panel open go to shots/panel/.   usage: sh panel-check.sh     (serves this folder on 127.0.0.1:8769)
 cd "$(dirname "$0")" || exit 2
 B="$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-152.0.7977.42/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+[ -x "$B" ] || B="$HOME/Library/Caches/ms-playwright/chromium_headless_shell-1148/chrome-mac/headless_shell"   # 10-07: the puppeteer cache was cleaned off the disk; Playwright's shell is the same binary
 [ -x "$B" ] || { echo "✘ panel-check: chrome-headless-shell not found"; exit 2; }
 mkdir -p shots/panel
 python3 -m http.server 8769 --bind 127.0.0.1 >/dev/null 2>&1 & SRV=$!
