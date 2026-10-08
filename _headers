@@ -1,0 +1,11 @@
+# Cloudflare Pages: the page and its maths must never be served from a stale cache after a deploy, and the data
+# files change every few minutes (GitHub Pages ignores this file; its own cache is 10 minutes)
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+/*.html
+  Cache-Control: no-cache
+/mood.js
+  Cache-Control: no-cache
+/data/*
+  Cache-Control: no-store

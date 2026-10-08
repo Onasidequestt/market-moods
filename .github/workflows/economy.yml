@@ -21,6 +21,7 @@ permissions:
 concurrency: { group: economy, cancel-in-progress: false }
 jobs:
   economy:
+    if: github.repository == 'Onasidequestt/market-moods'   # a fork or a copy must not start these clocks; change this if the repo moves
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -36,3 +37,4 @@ jobs:
           LOOP_FORCE: "${{ github.event.inputs.force }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
           CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
+          CF_PAGES_PROJECT: market-moods-preview   # our preview project; the client's own project goes here when his domain goes live

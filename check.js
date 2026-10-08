@@ -123,6 +123,11 @@ for (const i of d.indexes) {
   ok(Math.abs(i.last / i.prev_close - 1) < 0.15, i.key + ": move under 15% (a bad close would show here)");
 }
 ok(new Set(d.indexes.map(i => i.session_date)).size === 1, "all four from the same session");
+// companies: fetch.py lists which indexes have a companies file on disk, so the page opens doors from the list and never
+// probes a file that is not there (the Russell's HEAD probe 404'd on every load). Older files without the list still pass.
+const onDisk = ["dow", "sp500", "nasdaq", "russell"].filter(k => fs.existsSync(path.join(__dirname, "data", k === "sp500" ? "companies.json" : `companies-${k}.json`)));
+if (Array.isArray(d.companies)) ok(d.companies.join() === onDisk.join(), `market.json companies list names exactly the files on disk (${d.companies.join()} vs ${onDisk.join()})`);
+else console.log("… data/market.json has no companies list yet (written by the next fetch.py run); the page falls back to probing");
 // the fear gauge (VIX) is optional in the data file — its absence is an honest empty state (the
 // page runs the lamp with no fear effect), never faked; when present it must be real, priced data
 if (d.vix) ok(d.vix.key === "vix" && d.vix.last > 0 && d.vix.bars.length >= 2, "vix: real, priced data when present");
@@ -268,7 +273,7 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
         if (m.freq === "5min") ok(m.bars.length >= 1 && m.bars[m.bars.length - 1][0] === m.last_time && m.bars[m.bars.length - 1][1] === m.last, `${m.key}: the newest bar IS the last price`);
       }
     }
-    // everything Clark named is either live or listed as missing WITH a reason: nothing silently dropped
+    // everything the client named is either live or listed as missing WITH a reason: nothing silently dropped
     const asked = { brent: "Brent", wti: "WTI", natgas: "gas", gold: "Gold", silver: "Silver", copper: "Copper", steel: "steel", cobalt: "Cobalt",
       corn: "Corn", soy: "Soybeans", cotton: "Cotton", coffee: "Coffee", wheat: "Wheat", t10y: "10-year", mortgage: "mortgage", sentiment: "sentiment",
       payrolls: "Jobs", spending: "spending", cpi: "Consumer prices", unemp: "Unemployment", retail: "Retail" };

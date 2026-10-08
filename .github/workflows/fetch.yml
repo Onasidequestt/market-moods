@@ -9,7 +9,7 @@
 # touches data/market.json, so it stays fast (~20-30s measured) and never risks missing its
 # 10-minute slot because a companies fetch ran long.
 #
-# 2026-10-01 (Clark: "still stale"): the schedule trigger fired ~3 times a weekday, not 49 - GitHub
+# 2026-10-01 (client: "still stale"): the schedule trigger fired ~3 times a weekday, not 49 - GitHub
 # throttles it. So the cron below only BOOTSTRAPS: tools/loop.sh then runs a round every 10 minutes
 # for ~50 min and starts the next link itself (see that file). Odd minutes: :00/:10 are the busiest slots.
 name: fetch market data
@@ -25,6 +25,7 @@ permissions:
 concurrency: { group: fetch, cancel-in-progress: false }
 jobs:
   fetch:
+    if: github.repository == 'Onasidequestt/market-moods'   # a fork or a copy must not start these clocks; change this if the repo moves
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,3 +40,4 @@ jobs:
           LOOP_FORCE: "${{ github.event.inputs.force }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
           CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
+          CF_PAGES_PROJECT: market-moods-preview   # our preview project; the client's own project goes here when his domain goes live

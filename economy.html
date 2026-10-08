@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0a0610">
 <title>Market Moods: the economy</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0610'/%3E%3Ccircle cx='16' cy='17' r='9' fill='%23ff5a6e'/%3E%3C/svg%3E">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Market Moods: the economy">
 <meta name="description" content="A moving picture of the economy: energy, metals, farm goods, rates and the dollar, the slow macro numbers, debt and money, shipping and trade, and the central banks, each group a blob with its members inside.">
 <style>
   :root { --bg: #0a0610; --ink: #f4ecf7; --ink-2: rgba(244, 236, 247, .66); --ink-3: rgba(244, 236, 247, .42);
@@ -86,8 +89,10 @@
   @media (prefers-reduced-motion: reduce) { .panel, .panel.open { transition: none; } }
   /* END PANEL-CSS */
   /* a short window (a laptop with the browser not full height) inside an 18-member group: the same rule as the
-     phone's, keyed on height — the footer scrolls so the stage keeps room for the blobs (Clark 10-07: "out of control") */
-  @media (min-width: 700px) and (max-height: 760px) { body.incell footer { max-height: 40vh; max-height: 40dvh; overflow-y: auto; } }
+     phone's, keyed on height — the footer scrolls so the stage keeps room for the blobs (10-07: a short laptop window) */
+  @media (min-width: 700px) and (max-height: 760px) {   /* at 560px tall the stage keeps a ~135px radius and its labels: short cap, no key line, 20vh footer */
+    body.incell footer { max-height: 20vh; max-height: 20dvh; overflow-y: auto; }
+    body.incell .cellcap { top: 8%; } body.incell .cellcap .word { font-size: 30px; } body.incell .cellcap .key { display: none; } }
   footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
   .notice { text-align: center; color: var(--ink-2); font-size: 14px; display: none; margin: 0 0 10px; }
   .notice.on { display: block; }
@@ -464,7 +469,8 @@
   addEventListener("resize", resizeCell); resizeCell();
   const grp = () => G.find(g => g.key === cellKey);
   function cellGeom() {
-    const top = $("cellcap").getBoundingClientRect().bottom + 14, foot = $("members").getBoundingClientRect().top - ($("notice").classList.contains("on") ? $("notice").offsetHeight + 10 : 0) - 14;
+    // the footer box, not the list inside it: when the footer scrolls (short window) the list's top moves, the box's does not
+    const top = $("cellcap").getBoundingClientRect().bottom + 14, foot = $("foot").getBoundingClientRect().top - 14;
     const R = Math.max(40, Math.min((foot - top) / 2, innerWidth / 2 - 16));
     return { cx: innerWidth / 2, cy: (top + foot) / 2, R };
   }
@@ -493,19 +499,22 @@
     });
     const all = [...nodes.values()];
     for (const N of fresh) { N.x = N.tx; N.y = N.ty; }
-    relax(all, geo, fresh.length ? 240 : 8, fresh.length ? 0.16 : 0.05);
+    relax(all, geo, fresh.length ? 240 : 1, fresh.length ? 0.16 : 0.05, fresh.length ? 80 : 7);
   }
-  function relax(list, geo, iters, pull) {
-    for (let it = 0; it < iters; it++) {
-      for (const N of list) { N.x += (N.tx - N.x) * pull; N.y += (N.ty - N.y) * pull; }
+  function relax(list, geo, iters, pull, settle) {
+    // iters passes of pull-then-separate, then settle passes of separate alone: the pull never has the last word,
+    // so a packed cell ends each frame with its blobs apart (first open: 240 pulled + 80 settle; after: 1 + 7).
+    // Before (10-08 measured, 18 blobs on a phone): 8 pulls a frame left 16px of sink on the first frame, 6px after.
+    for (let it = 0; it < iters + settle; it++) {
+      if (it < iters) for (const N of list) { N.x += (N.tx - N.x) * pull; N.y += (N.ty - N.y) * pull; }
       for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
-        const A = list[a], B = list[b], dx = B.x - A.x, dy = B.y - A.y, min = A.r + B.r + 3, d2 = dx * dx + dy * dy;
+        const A = list[a], B = list[b], dx = B.x - A.x, dy = B.y - A.y, min = A.r + B.r + 5, d2 = dx * dx + dy * dy;   // 5px apart: the dashed rims (r+2.5) never touch
         if (d2 >= min * min) continue;
         const d = Math.sqrt(d2) || 0.01, push = (min - d) / d, wa = B.r * B.r / (A.r * A.r + B.r * B.r);
         A.x -= dx * push * wa; A.y -= dy * push * wa; B.x += dx * push * (1 - wa); B.y += dy * push * (1 - wa);
       }
       for (const N of list) {
-        const dx = N.x - geo.cx, dy = N.y - geo.cy, d = Math.hypot(dx, dy), lim = Math.max(0, geo.R * 0.96 - N.r);
+        const dx = N.x - geo.cx, dy = N.y - geo.cy, d = Math.hypot(dx, dy), lim = Math.max(0, geo.R * 0.96 - N.r - 3);   // 3px off the stage ring
         if (d > lim) { N.x = geo.cx + dx / d * lim; N.y = geo.cy + dy / d * lim; }
       }
     }
@@ -544,9 +553,11 @@
     ctx.fillStyle = "rgba(20,11,24,.9)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     for (const N of list) if (N.r >= 12 && N.r < 24) {   // too small for name + move: the name alone, so no blob is left blank
       ctx.font = `600 9px ui-sans-serif, -apple-system, sans-serif`;
-      let t = N.m.short || N.m.name, first = t.split(" ")[0];   // "Rail cars" -> "Rail", "USD share" -> "USD": a whole word before a clipped one
-      if (ctx.measureText(t).width > N.r * 1.9 && ctx.measureText(first).width <= N.r * 1.9) t = first;
-      while (t.length > 3 && ctx.measureText(t).width > N.r * 1.9) t = t.slice(0, -1);
+      let t = N.m.short || N.m.name, first = t.split(" ")[0];   // "Rail cars" -> "Rail", "USD share" -> "USD": a whole word before a shorter one
+      const fits = () => ctx.measureText(t).width <= N.r * 1.9;
+      if (!fits() && ctx.measureText(first).width <= N.r * 1.9) t = first;
+      // then 8px may run to the blob's edge (2.1r): "Freight", "Tonnage", "France" stay whole; last resort a 3-letter stem, never "Mexic"
+      if (!fits()) { ctx.font = `600 8px ui-sans-serif, -apple-system, sans-serif`; if (ctx.measureText(t).width > N.r * 2.1) { ctx.font = `600 9px ui-sans-serif, -apple-system, sans-serif`; t = first.slice(0, 3); } }
       ctx.fillText(t, N.dx, N.dy);
     }
     for (const N of list) if (N.r >= 24) {

@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0a0610">
 <title>Market Moods</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0610'/%3E%3Ccircle cx='16' cy='17' r='9' fill='%23ff5a6e'/%3E%3C/svg%3E">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Market Moods">
 <meta name="description" content="A moving picture of the mood of the US stock market: the Dow, S&P 500, Nasdaq and Russell 2000 as lava, with the companies inside the Dow, S&P 500 and Nasdaq.">
 <style>
   :root {
@@ -463,7 +466,8 @@
       step(0); ui(); if (gl) draw(); // numbers and lamp show at once, not after the first slow frames
       // eager only for sp500 (its door opens first, ~290 KB gzip); the other three load lazily,
       // only once their door is opened, so the lamp page never pulls all four company files up front
-      if (firstLoad) CELL_KEYS.forEach(k => k !== "sp500" && probeCell(k));
+      // market.json lists which company files exist (fetch.py); an older file without the list falls back to a HEAD probe
+      if (firstLoad) CELL_KEYS.forEach(k => k !== "sp500" && (Array.isArray(data.companies) ? markCell(k, data.companies.includes(k)) : probeCell(k)));
       if (!(cellState.sp500 && cellState.sp500.comp) || mode === "live") loadCompanies("sp500");
       // #cell&idx=<key> opens once <key>'s data is in (loadCompanies opens it on success, never on
       // failure); for keys other than sp500 that means asking for it explicitly here
@@ -618,7 +622,7 @@
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     if (data && mode !== "none") step(dt);
     if (gl && lanes.length && !inCell) draw();
-    if (lanes.length) { if (inCell) { cellStep(dt); cellDraw(); } else lampClear(); }
+    if (lanes.length) { if (inCell) { cellStep(dt); cellDraw(); } else { lampClear(); probeSpecks(); } }
     if ((uiT += dt) > 0.1 && data) { uiT = 0; ui(); cellUi(); }
     // exposed for browser-check.sh: the dialog's live scrollTop, however/whenever the browser
     // actually applies its autofocus scroll — not just what we set the instant it opens.
@@ -682,7 +686,7 @@
   function draw() {
     const W = canvas.width, H = canvas.height, aspect = W / H;
     // Stocks ride the upper row and the economy the lower one, each family spread over the whole width, each with its own up/down band.
-    const stacked = econ.length > 0;   // two rows at EVERY width (Clark 10-01: "2 rows, not one long one")
+    const stacked = econ.length > 0;   // two rows at EVERY width (10-01 ask: two rows, not one long one)
     const EW = 0.6, GAP = econ.length && !stacked ? 0.5 : 0;
     const laneW = stacked ? aspect / 4 : aspect / (4 + GAP + EW * econ.length);
     const wE = stacked ? aspect / Math.max(1, econ.length) : laneW * EW, x0E = stacked ? 0 : (4 + GAP) * laneW;
@@ -862,6 +866,12 @@
   // a door only appears once we KNOW its file exists (a cheap HEAD, no body): never promise an
   // inside view that turns out empty (rule 6). Probed once per key, for all four, right away —
   // this costs a round trip, not a download, so it doesn't fight the lazy-load budget.
+  function markCell(key, avail) {
+    const st = cellState[key] || (cellState[key] = {});
+    if (st.avail !== undefined) return;
+    st.avail = avail; if (!avail) st.err = true;
+    readoutDoors();
+  }
   async function probeCell(key) {
     const st = cellState[key] || (cellState[key] = {});
     if (st.avail !== undefined) return;
@@ -1022,6 +1032,7 @@
   }
 
   function cellDraw() {
+    cellDirty = true;
     const g = cellG || cellGeom(), L = lanes[cellLaneIdx()] || lanes[1], ctx = cx2;
     ctx.setTransform(cvDpr, 0, 0, cvDpr, 0, 0);
     const bg = ctx.createLinearGradient(0, 0, 0, innerHeight);
@@ -1128,10 +1139,20 @@
   }
 
   // in the lamp the cell canvas is empty: no company specks inside any index blob, so all four
-  // blobs look alike (Clark 10-07); the companies show only in the inside view
+  // blobs look alike (10-07 ask); the companies show only in the inside view. Cleared once after
+  // the inside view painted it (cellDirty), not every frame.
+  let cellDirty = false;
+  cv.dataset.specks = "";   // read by browser-check.sh: painted pixels counted on the cell canvas in lamp mode (?probe), never a constant
+  let speckN = 0;
+  function probeSpecks() {   // ?probe only (browser-check.sh): first 3 lamp frames, count painted pixels on the cell canvas, every 4th pixel
+    if (!PROBE || speckN++ >= 3 || !cv.width || !cv.height) return;
+    const d = cx2.getImageData(0, 0, cv.width, cv.height).data; let n = 0;
+    for (let i = 3; i < d.length; i += 16) if (d[i]) n++;
+    cv.dataset.specks = n;
+  }
   function lampClear() {
-    cx2.setTransform(cvDpr, 0, 0, cvDpr, 0, 0); cx2.clearRect(0, 0, innerWidth, innerHeight);
-    cv.dataset.specks = 0;   // read by browser-check.sh: the lamp draws no specks
+    if (!cellDirty) return;
+    cx2.setTransform(cvDpr, 0, 0, cvDpr, 0, 0); cx2.clearRect(0, 0, innerWidth, innerHeight); cellDirty = false;
   }
 
   function cellUi() {
@@ -1188,6 +1209,7 @@
     if (!inCell) return;
     inCell = false; document.body.classList.remove("incell"); $("backBtn").hidden = true; Panel.close(false);
     $("notice").classList.remove("on");
+    lampClear();   // the inside view's last frame must not sit behind the lamp
   }
   function nodeAt(x, y) {
     let best = null;

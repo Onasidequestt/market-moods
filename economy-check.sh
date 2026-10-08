@@ -40,7 +40,36 @@ for SIZE in 390,844 1440,900; do
   shoot $SIZE "http://127.0.0.1:8768/.econ-same-check/economy.html?probe" "$T/samelamp_$SIZE"
 done
 shoot 390,568 "http://127.0.0.1:8768/.econ-same-check/economy.html?probe" "$T/short"   # r4: a short phone, where two rows would not fit
-shoot 1000,560 "http://127.0.0.1:8768/economy.html#g=shipping" "$T/shortdesk"   # 10-07 (Clark): a laptop window not full height, inside the 18-member group
+shoot 1000,560 "http://127.0.0.1:8768/economy.html#g=shipping" "$T/shortdesk"   # 10-07 (client): a laptop window not full height, inside the 18-member group
+# 10-08: the footer scrolls in a short window; the stage must not move with it. Real CDP: open inside shipping at
+# 1000x560, read data-cell, set #foot.scrollTop = 200, two frames later read data-cell and the scrollTop that took.
+node - "$B" "$T" <<'EOS' > "$T/scroll.txt" 2>/dev/null
+const { spawn } = require("child_process"), fs = require("fs"), os = require("os"), path = require("path");
+const [B, T] = process.argv.slice(2), cdp = 40000 + Math.floor(Math.random() * 20000), prof = fs.mkdtempSync(path.join(os.tmpdir(), "mm-"));
+const sh = spawn(B, ["--headless", `--user-data-dir=${prof}`, "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--window-size=1000,560", `--remote-debugging-port=${cdp}`, "about:blank"], { stdio: "ignore" });
+const sleep = ms => new Promise(r => setTimeout(r, ms)), bye = () => { try { sh.kill(); } catch {} fs.rmSync(prof, { recursive: true, force: true }); };
+setTimeout(() => { console.log("probe-timeout"); bye(); process.exit(0); }, 40000);   // a hung shell must not hang the check
+(async () => {
+  let list = null; for (let i = 0; i < 40 && !list; i++) { await sleep(250); try { list = await (await fetch(`http://127.0.0.1:${cdp}/json`)).json(); } catch {} }
+  if (!list) throw new Error("no CDP");
+  const ws = new WebSocket(list[0].webSocketDebuggerUrl); let id = 0; const pend = new Map();
+  await new Promise(r => ws.onopen = r);
+  ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id); } };
+  const send = (method, params = {}) => new Promise(r => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+  const ev = async expression => (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true })).result?.result?.value;
+  await send("Page.enable"); await send("Page.navigate", { url: "http://127.0.0.1:8768/economy.html#g=shipping" }); await sleep(2500);
+  const cell = () => ev(`document.getElementById("cell").dataset.cell`);
+  let before = null; for (let i = 0; i < 20 && !before; i++) { before = await cell(); if (!before) await sleep(250); }   // wait for the first inside-view frame
+  await ev(`(async () => { document.getElementById("foot").scrollTop = 200; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return 1; })()`); await sleep(300);
+  const after = await cell(), top = await ev(`document.getElementById("foot").scrollTop`);
+  // 60 frames on: the steady-state frames (1 pull + 7 settle passes each) must keep the blobs apart too, not only the first
+  await ev(`(async () => { for (let i = 0; i < 60; i++) await new Promise(r => requestAnimationFrame(r)); return 1; })()`);
+  const bl = (await ev(`document.getElementById("cell").dataset.blobs`) || "").split(";").filter(Boolean).map(b => b.split(",").map(Number));
+  let ov = 0; for (let i = 0; i < bl.length; i++) for (let j = i + 1; j < bl.length; j++) ov = Math.max(ov, bl[i][2] + bl[j][2] - Math.hypot(bl[i][0] - bl[j][0], bl[i][1] - bl[j][1]));
+  console.log(before, after, top, bl.length, ov.toFixed(1));
+  ws.close(); bye(); process.exit(0);
+})().catch(e => { console.log("probe-failed", e.message); bye(); process.exit(0); });
+EOS
 mkdir -p shots/economy; for K in $KEYS; do cp "$T/g_${K}_390,844.png" "shots/economy/${K}_phone.png"; done
 cp "$T/lamp_390,844.png" shots/economy/lamp_phone.png; cp "$T/lamp_1440,900.png" shots/economy/lamp_desktop.png
 node - "$T" "$KEYS" <<'EOJ'
@@ -102,7 +131,7 @@ for (const SIZE of ["390,844", "1440,900"]) {
   ok(fe === want.map(([k, p]) => k + ":" + p.toFixed(2)).join(","), `${tag} front: one economy blob per group, moves recounted (${fe})`);
   const doors = [...F.matchAll(/<span class="door econ" title="Look inside ([^"]+)"/g)].map(x => dec(x[1]));
   ok(doors.join() === e.groups.map(g => g.name).join(), `${tag} front: a label per group that opens it (${doors.join(" | ")})`);
-  // Clark 10-01: two rows at every width, the economy BELOW the stocks, not one long row. Label heights are the
+  // 10-01 ask: two rows at every width, the economy BELOW the stocks, not one long row. Label heights are the
   // painted ones (style bottom:px): every economy label sits under every index label.
   const sp = (/<div class="tags"[^>]*>([\s\S]*?)<\/div>/.exec(F) || [, ""])[1].match(/<span[^>]*>/g) || [];
   const bOf = x => parseFloat((/bottom: ([\d.]+)px/.exec(x) || [, NaN])[1]);
@@ -131,12 +160,21 @@ for (const SIZE of ["390,844", "1440,900"]) {
 }
 const Sh = dom("short");   // a 568px phone: every blob drawn, none cut by an edge (two rows fall back to one when they cannot both move)
 ok(attr(Sh, /data-drops="(\d+)"/) == 40 && +attr(Sh, /data-edge-tests="(\d+)"/) > 0 && attr(Sh, /data-edge-hits="(\d+)"/) === "0", `short phone: 8 blobs drawn, none cut by an edge (${attr(Sh, /data-drops="(\d+)"/)} drops, ${attr(Sh, /data-edge-hits="(\d+)"/)} of ${attr(Sh, /data-edge-tests="(\d+)"/)} frames)`);
-// 10-07 (Clark "out of control"): a 1000x560 window inside shipping (18 members). Before: the member list ate the stage
+// 10-07 (client: "out of control"): a 1000x560 window inside shipping (18 members). Before: the member list ate the stage
 // (R=40) while every blob kept its 16px floor — 18 blobs piled on the text. Now the footer scrolls (R>=60) and the radii
 // scale down together to fit the cell: every blob whole inside it, their area under 60% of it, none below the stage.
 const Sd = dom("shortdesk"), cellD = (attr(Sd, /data-cell="([^"]+)"/) || "").split(",").map(Number), blobsD = (attr(Sd, /data-blobs="([^"]*)"/) || "").split(";").filter(Boolean).map(b => b.split(",").map(Number));
 const [dcx, dcy, dR] = cellD, outD = blobsD.filter(([x, y, r]) => Math.hypot(x - dcx, y - dcy) + r > dR + 1).length, areaD = blobsD.reduce((a, [, , r]) => a + r * r, 0) / (dR * dR || 1);
-ok(blobsD.length === 18 && dR >= 60, `short desktop inside shipping: 18 blobs on a stage of radius >= 60px (${blobsD.length} blobs, R=${dR})`);
+ok(blobsD.length === 18 && dR >= 140, `short desktop inside shipping: 18 blobs on a stage of radius >= 140px, big enough for named blobs (${blobsD.length} blobs, R=${dR})`);
 ok(blobsD.length === 18 && outD === 0 && areaD <= 0.6, `short desktop inside shipping: every blob whole inside the cell, area <= 60% of it (${outD} outside, ${(areaD * 100).toFixed(0)}%)`);
+// the fit budgets relax()'s 3px gap: settled blobs never sink into each other past the wobble (~1.5px at r=10, ~3px at r=20)
+const overlap = bl => { let w = 0; for (let i = 0; i < bl.length; i++) for (let j = i + 1; j < bl.length; j++) w = Math.max(w, bl[i][2] + bl[j][2] - Math.hypot(bl[i][0] - bl[j][0], bl[i][1] - bl[j][1])); return w; };
+const blobsP = (attr(dom("g_shipping_390,844"), /data-blobs="([^"]*)"/) || "").split(";").filter(Boolean).map(b => b.split(",").map(Number));
+ok(blobsD.length === 18 && overlap(blobsD) <= 2, `short desktop inside shipping: no two blobs sink into each other past 2px (${overlap(blobsD).toFixed(1)}px)`);
+ok(blobsP.length === 18 && overlap(blobsP) <= 3.5, `phone inside shipping: no two blobs sink into each other past 3.5px (${overlap(blobsP).toFixed(1)}px)`);
+// the footer scroll must leave the stage where it was (10-08): cellGeom anchors to the footer box, not the list inside it
+const scroll = (fs.existsSync(`${T}/scroll.txt`) ? fs.readFileSync(`${T}/scroll.txt`, "utf8") : "").trim(), [scB, scA, scT, scN, scO] = scroll.split(/\s+/);
+ok(scB && scB === scA && +scT > 0 && !/probe-/.test(scroll), `short desktop inside shipping: scrolling the footer leaves the stage put (cell ${scB} -> ${scA}, scrollTop ${scT}; probe said "${scroll}")`);
+ok(+scN === 18 && +scO <= 2, `short desktop inside shipping, 60 frames after opening: blobs still apart, no sink past 2px (${scN} blobs, ${scO}px)`);
 console.log(`${bad ? "✘" : "✓"} economy-check: ${n} checks, ${bad} failed`); process.exit(bad ? 1 : 0);
 EOJ

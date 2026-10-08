@@ -84,8 +84,12 @@ def build():
         vix = shape("vix", "VIX", "^VIX", get("^VIX", "5m", "5d"), get("^VIX", "1d", "1mo"))
     except Exception as e:
         print(f"vix fetch failed (non-fatal, the lamp just runs without a fear gauge): {e}", file=sys.stderr)
+    here = pathlib.Path(__file__).parent / "data"
     out_d = {"generated_at": int(time.time()), "source": "Yahoo Finance chart API (delayed)",
-             "indexes": out}
+             "indexes": out,
+             # which indexes have a companies file on disk right now: the page opens doors from this list instead of
+             # probing each file (the Russell has none: a probe 404'd in the console on every load)
+             "companies": companies_on_disk(here)}
     if vix is not None: out_d["vix"] = vix
     return out_d
 
@@ -107,6 +111,9 @@ UA = {"User-Agent": "Mozilla/5.0 market-moods"}
 
 # how many companies each index's inside view can show, and where its roster comes from
 INDEX_CAP = {"dow": 30, "sp500": 500, "nasdaq": 500, "russell": 500}
+def companies_on_disk(here):
+    """index keys whose companies file exists in data/: market.json carries this so the page opens doors from it"""
+    return [k for k in INDEX_CAP if (here / ("companies.json" if k == "sp500" else f"companies-{k}.json")).exists()]
 
 # sector labels are not uniform across sources (Wikipedia's S&P/Dow tables use GICS sector names;
 # nasdaq.com's screener uses its own shorter labels) — normalised ONCE, here, for every roster
@@ -420,7 +427,7 @@ ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls
               "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI", "credit": "Credit", "cards": "Cards", "fedDebt": "Fed. debt",
               "m1": "M1", "railCars": "Rail cars", "railBox": "Intermodal", "tsi": "Freight idx", "truckTons": "Tonnage", "imports": "Import prices", "exports": "Export prices", "tradeCH": "China trade", "tradeCA": "Canada trade", "tradeMX": "Mexico trade", "tradeJP": "Japan trade", "tradeKR": "Korea trade", "tradeUK": "UK trade", "tradeGE": "Germany trade", "tradeFR": "France trade", "goldUSA": "US gold", "goldDEU": "German gold", "goldITA": "Italian gold", "goldFRA": "French gold", "goldCHN": "China gold", "goldIND": "India gold", "goldPOL": "Polish gold", "goldTUR": "Turkish gold", "boeAssets": "BoE", "pbocAssets": "PBoC", "snbAssets": "SNB", "fxReserves": "FX reserves", "usdShare": "USD share",  "fedAssets": "Fed", "ecbAssets": "ECB", "bojAssets": "BoJ", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
               "trucking": "Trucking", "feeder": "Feeder", "oj": "OJ", "cattle": "Cattle", "rice": "Rice", "hogs": "Hogs"}     # a blob's label; the full name rides in the tooltip
-# things Clark asked for that no free keyless source carries: listed on the page, never faked
+# things the client asked for that no free keyless source carries: listed on the page, never faked
 ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)"),
                 ("energy", "Propane", "Yahoo lists Mont Belvieu propane (B0=F) but it printed once in 5 days: too thin for a move"),
                 ("energy", "Ethanol", "Yahoo's ethanol future (EH=F) returns no prices; no other free keyless feed"),
@@ -756,6 +763,9 @@ if __name__ == "__main__":
         fname = "companies.json" if key == "sp500" else f"companies-{key}.json"   # sp500 URL unchanged
         data = build_companies(json.loads((here / "market.json").read_text()), key)
         (here / fname).write_text(json.dumps(data, separators=(",", ":")) + "\n")
+        m = json.loads((here / "market.json").read_text())   # the market file's door list must not lag a file this round just wrote
+        if m.get("companies") != companies_on_disk(here):
+            m["companies"] = companies_on_disk(here); (here / "market.json").write_text(json.dumps(m, separators=(",", ":")) + "\n")
         last = data["sessions"][-1]; up = sum(1 for x in last["m"] if x and x[-1] > 0)
         print(f'companies[{key}]: {len(data["companies"])} members, {len(data["sessions"])} days, '
               f'{last["date"]}: {up} up of {sum(1 for x in last["m"] if x)} priced -> data/{fname}')

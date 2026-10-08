@@ -6,3 +6,12 @@ NEXT_SESSION_PROMPT.md
 
 # CLAUDE_BRAIN subsystem nodes (regenerable cache)
 .brain/
+.wrangler/
+drafts/
+inbox_*
+RECEIPTS.md
+*_PLAN_*.md
+shots/
+.*-check
+russell_source_*.md
+ideas_*.md

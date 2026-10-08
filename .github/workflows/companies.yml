@@ -5,7 +5,7 @@
 # the fetch.yml job comfortably miss its next scheduled start, since cancel-in-progress is false
 # and runs queue instead of overlapping.
 #
-# ponytail: every 15 minutes (30 until 2026-09-30, Clark's mm20) is a guess, not a measured ceiling — it just needs to be bigger than
+# ponytail: every 15 minutes (30 until 2026-09-30, the client's ask) is a guess, not a measured ceiling — it just needs to be bigger than
 # the slowest single index's fetch time (~6 min measured for Nasdaq) with headroom for GitHub's
 # best-effort cron slippage (5-20 min late, same caveat as fetch.yml). Ceiling: fine as long as no
 # single index's roster+price fetch creeps past ~15 min. Upgrade path if it does: cache each
@@ -15,7 +15,7 @@
 # into a once-daily cost, leaving only per-symbol price calls (caps()/spark()) on the 15-min cycle.
 # A full run (all four) measured ~8-9 min, so 15 leaves ~6 min of slack; a late start queues, never overlaps.
 #
-# 2026-10-01 (Clark: "still stale"): two causes. (1) fetch.py crashed on every run since the volume
+# 2026-10-01 (client: "still stale"): two causes. (1) fetch.py crashed on every run since the volume
 # heartbeat widened bars to [t, close, volume]; the `|| echo ::warning` below swallowed it, so runs were
 # green while data/companies*.json froze at 09-30 17:07Z. Now a failed index fails the run (after the good
 # ones are committed). (2) GitHub's schedule trigger fired ~3 of ~33 times; the cron only bootstraps a chain
@@ -33,6 +33,7 @@ permissions:
 concurrency: { group: companies, cancel-in-progress: false }
 jobs:
   companies:
+    if: github.repository == 'Onasidequestt/market-moods'   # a fork or a copy must not start these clocks; change this if the repo moves
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -47,3 +48,4 @@ jobs:
           LOOP_FORCE: "${{ github.event.inputs.force }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
           CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
+          CF_PAGES_PROJECT: market-moods-preview   # our preview project; the client's own project goes here when his domain goes live

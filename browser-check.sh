@@ -5,7 +5,7 @@
 #  2. without data: the honest "couldn't load" notice shows and NO wax is drawn
 #  3. inside the S&P 500 (#cell): the caption's counts (rising / against the index) match a
 #     count made HERE from the data files at the page's own moment; the blobs are really drawn;
-#     "All 500" shows every priced member; with no company file there is no door and no specks
+#     "All 500" shows every priced member; with no company file there is no door (the lamp draws no specks since 10-07)
 # usage: sh browser-check.sh     (serves this folder on 127.0.0.1:8766 while it runs)
 cd "$(dirname "$0")" || exit 2
 B="$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-152.0.7977.42/chrome-headless-shell-mac-arm64/chrome-headless-shell"
@@ -55,7 +55,7 @@ shoot() { # $1 size  $2 url  $3 out
 }
 RC=0
 for SIZE in 390,844 1440,900; do
-  shoot $SIZE "http://127.0.0.1:8766/#at=12:10" "$T/ok"
+  shoot $SIZE "http://127.0.0.1:8766/?probe#at=12:10" "$T/ok"   # ?probe: the page counts painted pixels on the lamp's cell canvas (specks leg)
   shoot $SIZE "http://127.0.0.1:8766/.nodata-check/" "$T/no"
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-23&at=15:55" "$T/down"
   shoot $SIZE "http://127.0.0.1:8766/#day=2026-09-21&at=15:55" "$T/up"
@@ -205,11 +205,10 @@ tagd = re.search(r'id="tags"[^>]*>(.*?)</div>', okd, re.S)
 ntag = len(re.findall(r'<span[^>]*\bclass="door"', tagd[1])) if tagd else -1
 if ntag != ndoors_want: bad.append(f"{ntag} blob labels open an inside view, want {ndoors_want} (one per companies file on disk)")
 sk = re.search(r'id="cell"[^>]*data-specks="(\d+)"', okd)
-if not sk or int(sk[1]) != 0: bad.append(f"lamp: {sk and sk[1]} specks in an index blob, want none (Clark 10-07: all four blobs alike)")
+if not sk or int(sk[1]) != 0: bad.append(f"lamp: {sk and sk[1]} specks in an index blob, want none (10-07 ask: all four blobs alike)")
 ncd = open(f"{t}/nocomp.html").read()
 if 'class="idx hasdoor"' in ncd or 'class="incell"' in ncd: bad.append("no company file, yet the door/inside view shows")
 if re.search(r'<span[^>]*\bclass="door"', ncd): bad.append("no company file, yet a blob label is a door")
-if re.search(r'data-specks="[1-9]', ncd): bad.append("no company file, yet specks are drawn (fake liveliness)")
 if wax(f"{t}/nocomp.png") < 400: bad.append("no company file broke the lamp itself")
 if bad: print(f"✘ browser-check {size}: " + "; ".join(bad)); sys.exit(1)
 print(f"✓ browser-check {size} (real Chromium): cards {pcts} · wax {w_ok}px · no-data notice ✓, wax {w_no}px · Wed 23 {dp} · {c1} · {c2} · {cdow} · {cnas} · {ndoors_got} doors")
