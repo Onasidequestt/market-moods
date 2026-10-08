@@ -303,4 +303,18 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
   ok(page.includes('DATA_URL = "data/economy.json"') && !/Math\.random/.test(page), "economy.html: reads data/economy.json only, no random numbers");
   ok(/<dt>Dates<\/dt>/.test(page) && /never called live/.test(page), "economy.html: help says slow numbers carry their own date");
 }
+
+// brand (Clark 10-08): six-cell hex mark + serif wordmark in both headers, and the exact Humble credit line as one link
+{
+  const TAG = "A complementary tool provided by Humble Services Business Consulting for your eyes on the global markets.";
+  for (const f of ["index.html", "economy.html"]) {
+    const h = fs.readFileSync(path.join(__dirname, f), "utf8");
+    ok(h.includes(TAG), f + ": exact Humble credit line");
+    ok(/<a class="credit" id="credit" href="https:\/\/[^"]+" target="_blank" rel="noopener"><img src="assets\/humble_crest\.png"/.test(h), f + ": credit is one link with the crest");
+    ok((h.match(/data-cell="\d"/g) || []).length === 6, f + ": hex mark has 6 cells");
+    ok(h.includes('id="brandMark"') && h.includes("brandCell("), f + ": mark is wired to the card colours");
+    ok(/\.brand h1 \{[^}]*Fraunces/.test(h), f + ": serif wordmark");
+  }
+  ok(fs.existsSync(path.join(__dirname, "assets/humble_crest.png")), "crest file shipped");
+}
 console.log(`✓ market-moods check: ${n} asserts`);
