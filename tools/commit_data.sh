@@ -34,7 +34,7 @@ done
 stamp="${RUNNER_TEMP:-/tmp}/mm_pages_deployed"
 [ -f "$stamp" ] && [ $(( $(date +%s) - $(cat "$stamp") )) -lt 540 ] && { echo "deployed <9 min ago, skip"; exit 0; }
 site=$(mktemp -d)
-cp index.html economy.html mood.js _headers "$site"/ && cp -R data "$site"/ \
+cp index.html economy.html mood.js _headers "$site"/ && cp -R data assets "$site"/ \
   && npx --yes wrangler@4 pages deploy "$site" --project-name="$CF_PAGES_PROJECT" \
        --branch=main --commit-dirty=true </dev/null \
   && { date +%s > "$stamp"; echo "deployed to Cloudflare Pages ($CF_PAGES_PROJECT)"; exit 0; }   # the stamp marks a deploy that LANDED: a failed one must not make the next job skip
