@@ -90,7 +90,7 @@ for (const SIZE of ["390,844", "1440,900"]) {
   const tagSpans = (/<div class="tags"[^>]*>([\s\S]*?)<\/div>/.exec(L) || [, ""])[1].match(/<span[^>]*>/g) || [];
   ok(tagSpans.length === e.groups.length && tagSpans.every(t => /left:/.test(t) && /visibility: visible/.test(t)), `${tag}: every group label is placed and shown on first paint (${tagSpans.filter(t => /left:/.test(t)).length}/${e.groups.length})`);
   ok(/data-pill="(Delayed|Closed) /.test(L), `${tag}: the pill says delayed or closed (${attr(L, /data-pill="([^"]*)"/)})`);
-  const cards = [...L.matchAll(/<button[^>]*class="card" data-g="(\w+)"[\s\S]*?<div class="pct num"[^>]*>([^<]*)<\/div><div class="lvl">([^<]*)<\/div>/g)];
+  const cards = [...L.matchAll(/<button[^>]*class="card" data-g="(\w+)"[\s\S]*?<div class="pct num"[^>]*>([^<]*)<\/div><div class="lvl">((?:(?!<\/div>)[\s\S])*)<\/div>/g)].map(([a, k, pct, when]) => [a, k, pct, when.replace(/<[^>]*>/g, "")]);   // part 2: "monthly · " sits in its own span (a phone hides it); the words are still all there
   ok(cards.length === e.groups.length, `${tag}: one card per group (${cards.length})`);
   for (const [, k, pct, when] of cards) {
     const g = e.groups.find(x => x.key === k);

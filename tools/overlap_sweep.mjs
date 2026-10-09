@@ -2,8 +2,8 @@
 // One real Chromium tab per page, loaded once and then RESIZED through every width 320→1920 (40px steps) at 800 tall,
 // plus short and phone windows. After each resize it waits for the page to settle, then boxes every visible text run,
 // image and control, and every blob's core. Fails on: two boxes of different items that intersect (neither inside
-// the other), any box past the window edge, a blob's core over any text/control outside the stage labels, or two
-// economy blobs (each keeps its body to itself) on top of each other.
+// the other), any box past the window edge, a blob's core over any text/control but its own stage label, or two
+// economy blobs (each keeps its body to itself) on top of each other, or text cut short by its own ellipsis.
 // usage: node tools/overlap_sweep.mjs <base url> <browser binary> [page ...]   (exit 1 on any overlap, 2 if it cannot run)
 //        OVERLAP_SHOTS=<dir> also saves the measured frame of every page×size as a PNG
 import { spawn } from "node:child_process";
@@ -44,11 +44,16 @@ const PROBE = `(() => {
     if (A.el === B.el || A.el.contains(B.el) || B.el.contains(A.el)) continue;
     const ox = Math.min(A.b[2], B.b[2]) - Math.max(A.b[0], B.b[0]), oy = Math.min(A.b[3], B.b[3]) - Math.max(A.b[1], B.b[1]);
     if (ox > 1 && oy > 1) bad.push(nm(A.el) + " '" + A.what + "' × " + nm(B.el) + " '" + B.what + "' (" + Math.round(ox) + "x" + Math.round(oy) + ")"); }
-  // a blob's core (a circle) over text or a control that is not a stage label: wax over the header, caption or footer
+  // a blob's core (a circle) over any text or control: wax over the header, caption or footer, or a stage label on a
+  // NEIGHBOUR's blob (part 2: NASDAQ sat on Economy). A stage label may touch only its own blob (c.i = its index in #tags).
   const hook = window.__mm || window.__em, blobs = hook && hook.blobs ? hook.blobs() : [];
-  for (const c of blobs) for (const a of items) { if (a.el.closest(".tags")) continue; const b = a.b;
+  const tagIx = el => { const t = el.closest(".tags > *"); return t ? [...t.parentElement.children].indexOf(t) : -1; };
+  for (const c of blobs) for (const a of items) { if (c.i == null && a.el.closest(".tags")) continue; if (tagIx(a.el) === c.i) continue; const b = a.b;
     const dx = Math.max(b[0] - c.x, 0, c.x - b[2]), dy = Math.max(b[1] - c.y, 0, c.y - b[3]);
     if (Math.hypot(dx, dy) < c.r - 1) bad.push("blob at " + Math.round(c.x) + "," + Math.round(c.y) + " r" + Math.round(c.r) + " × " + nm(a.el) + " '" + a.what + "'"); }
+  // part 2 (Clark 10-08): a name cut short by its own ellipsis ("Dow J", "Central ba" at 641-900) is a squeeze too
+  document.querySelectorAll("body *").forEach(el => { if (!shown(el) || getComputedStyle(el).textOverflow !== "ellipsis") return;
+    if (el.scrollWidth > el.clientWidth + 1) bad.push("cut short: " + nm(el) + " '" + el.textContent.trim().slice(0, 22) + "'"); });
   // two blobs that each keep their body to themselves (economy groups) must not sit on each other
   for (let i = 0; i < blobs.length; i++) for (let j = i + 1; j < blobs.length; j++) { const a = blobs[i], b = blobs[j];
     if (a.own && b.own && Math.hypot(a.x - b.x, a.y - b.y) < a.r + b.r - 1) bad.push("blob on blob at " + Math.round(a.x) + "," + Math.round(a.y) + " and " + Math.round(b.x) + "," + Math.round(b.y)); }

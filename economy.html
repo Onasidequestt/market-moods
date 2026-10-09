@@ -144,7 +144,7 @@
     .readouts { gap: 5px; }
     .card { padding: 5px 6px; border-radius: 10px; grid-template-columns: minmax(0, 1fr); row-gap: 1px; }
     .card .pct { font-size: 13px; grid-column: 1; grid-row: 2; text-align: left; }
-    .card .lvl { grid-row: 3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card .lvl { grid-row: 3; line-height: 1.15; } .card .lvl .fq { display: none; }   /* part 2: "Oct 2026", never "monthly · Oc…" (and no second line: the stage keeps its height) */
     .card .name { font-size: 10px; gap: 3px; white-space: normal; line-height: 1.15; }   /* "Central banks" wraps, never "Central ba…" */
     .card .chip { width: 7px; height: 7px; }
     .card .lvl { font-size: 9.5px; }
@@ -156,6 +156,11 @@
     .key .short { display: inline; }
     .status { font-size: 11.5px; }
   }
+  /* part 2 (Clark 10-08, "Central ba…" at 641-900px): the name takes the card's whole top row, the move and the door share
+     the second, the as-of line runs full width under them (same shape as the front page's cards at these widths) */
+  @media (min-width: 641px) and (max-width: 960px) {
+    .card .name { grid-column: 1 / -1; grid-row: 1; } .card .pct { grid-column: 1; grid-row: 2; text-align: left; font-size: 15px; }
+    .card .look { grid-column: 2; grid-row: 2; } .card .lvl { grid-column: 1 / -1; grid-row: 3; } }
   /* a short window (phone on its side, a small laptop window): the header and caption give the stage room, so the
      blobs never sit on the words. One rule for both pages, keyed on height. */
   @media (max-height: 600px) { header { padding-top: max(10px, env(safe-area-inset-top)); } .brand .mark { width: 30px; height: 30px; } .brand h1 { font-size: 20px; }
@@ -658,7 +663,8 @@
       g.el.querySelector(".chip").style.background = c;
       brandCell(G.indexOf(g), c);
       const pe = g.el.querySelector(".pct"); pe.textContent = fmtPct(g.pct); pe.style.color = c;
-      g.el.querySelector(".lvl").textContent = groupWhenLabel(g, now);
+      const lv = g.el.querySelector(".lvl"), wl = groupWhenLabel(g, now), k = wl.indexOf(" · ");
+      if (lv.textContent !== wl) { lv.textContent = k < 0 ? wl : ""; if (k >= 0) { const f = document.createElement("span"); f.className = "fq"; f.textContent = wl.slice(0, k + 3); lv.append(f, wl.slice(k + 3)); } }   // "monthly · " in its own span: a phone shows just the month
     });
     const tags = $("tags");
     const ws = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetWidth : 0), hs = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetHeight : 0);   // read every size first, then write
@@ -739,7 +745,7 @@
   window.__em = { get inCell() { return inCell; }, groupXY(key) { const H = innerHeight, i = G.findIndex(g => g.key === key), L = lanes[i];
                     return L && L.hx != null ? { x: L.hx * H, y: H - L.hy * H } : null; },
                   memberXY(key) { const N = nodes.get(key); return N && N.dx != null ? { x: N.dx, y: N.dy } : null; },
-                  blobs() { const H = innerHeight; return inCell ? [] : lanes.filter(L => L.hx != null && L.r).map(L => ({ x: L.hx * H, y: H - L.hy * H, r: L.r * H, own: true })); } };   // overlap sweep: every blob's core, client px
+                  blobs() { const H = innerHeight; return inCell ? [] : lanes.map((L, i) => ({ L, i })).filter(({ L }) => L.hx != null && L.r).map(({ L, i }) => ({ x: L.hx * H, y: H - L.hy * H, r: L.r * H, own: true, i })); } };   // overlap sweep: every blob's core, client px; i = its label's index in #tags
 })();
 </script>
 </body>

@@ -88,7 +88,7 @@
   .mood .key { margin: 6px auto 0; padding: 0 16px; font-size: 12px; color: var(--ink-3); max-width: 560px; }
   .tags { position: fixed; inset: 0; pointer-events: none; }
   .tags span.door { pointer-events: auto; cursor: pointer; }
-  .tags span.econ { font-size: 10px; }
+  .tags span.econ { font-size: 10px; white-space: normal; width: max-content; max-width: var(--laneE, none); text-align: center; line-height: 1.15; }   /* part 2: a label wider than its lane wraps inside it (CENTRAL BANKS was shoved onto Shipping at 800-840px); max-content: no early wrap at the right edge */
   @media (max-width: 480px) { .tags span.econ { font-size: 9px; letter-spacing: .03em; } }
   .fam { position: fixed; inset: 0; pointer-events: none; }
   .fam span { position: absolute; transform: translate(-50%, 0); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink); opacity: .9; white-space: nowrap;
@@ -210,7 +210,7 @@
     .idx .lvl { grid-row: 3; }
     .idx .look { grid-column: 1; grid-row: 4; justify-self: start; margin-top: 2px; }
     .idx .lvl { font-size: 10.5px; }
-    .idx .name { font-size: 11px; gap: 5px; }
+    .idx .name { font-size: 11px; gap: 5px; white-space: normal; line-height: 1.15; }   /* part 2: "S&P 500" wraps at 320px, never "S&P 5…" */
     .idx .chop { display: none; }
     .idx .look { padding: 3px 8px; font-size: 11.5px; }
     .btn .lbl { display: none; }
@@ -227,6 +227,13 @@
     .cellctl { gap: 6px 12px; }
     .btn.opt { padding: 0 9px; }
   }
+  /* part 2 (Clark 10-08, "Dow J" at 641-900px): between phone and desktop a card is 150-230px wide, too narrow for the
+     name beside the move AND the door beside the details. The name takes the whole top row; the move and a short door share
+     the second; level and chop run full width under them. Short windows keep their one-line rows (the rule below). */
+  @media (min-width: 641px) and (max-width: 960px) and (min-height: 601px) {
+    .idx .name { grid-column: 1 / -1; grid-row: 1; } .idx .pct { grid-column: 1; grid-row: 2; text-align: left; font-size: 15px; }
+    .idx .look { grid-column: 2; grid-row: 2; } .idx .look .long { display: none; } .idx .look .short { display: inline; }
+    .idx .lvl { grid-column: 1 / -1; grid-row: 3; } .idx .chop { grid-column: 1 / -1; grid-row: 4; } }
   /* a short window (phone on its side, a small laptop window): the header and caption give the stage room, so the
      blobs never sit on the words. One rule for both pages, keyed on height. */
   @media (max-height: 600px) { header { padding-top: max(10px, env(safe-area-inset-top)); } .brand .mark { width: 30px; height: 30px; } .brand h1 { font-size: 20px; }
@@ -234,6 +241,10 @@
     .mood, .cellcap { margin-top: 2px; } .mood .word, .cellcap .word { font-size: 30px; } .mood .key, .cellcap .key { display: none; } .mood .sub, .cellcap .sub { margin-top: 4px; } }
   @media (max-height: 600px) and (min-width: 700px) { .brand { flex: none; } .credit { order: 0; flex: 1 1 0; flex-basis: 0; padding: 0 8px; justify-content: center; } }   /* the credit beside the brand, not a row of its own */
   @media (max-height: 600px) { .timeline { margin: 19px 0 8px; } .days { margin-bottom: 4px; } }
+  @media (max-height: 600px) and (max-width: 640px) {   /* part 2: a short phone (320x568) had a 61px stage for two rows; as on a short wide window the row itself is the door and the level waits in the cell */
+    .idx .lvl { display: none; } .idx.hasdoor .look { display: none; } }
+  @media (max-width: 360px) { .btn.day { padding: 0 8px; font-size: 11.5px; } }   /* five days on one row at 320px, not four and an orphan */
+  @media (max-width: 360px) { .idx { padding: 5px; } .idx .name { gap: 4px; } }   /* part 2: one word ("Nasdaq") cannot wrap; at 320px it needs these 4px */
   @media (max-height: 600px) and (min-width: 641px) {   /* short and wide: each index row is ONE line (name · move · door), the stage gets the height; the level is in its details panel */
     .idx { grid-template-columns: minmax(0, 1fr) auto auto; } .idx .lvl, .idx .chop { display: none; } .idx .look { grid-column: 3; grid-row: 1; }
     .idx .long { display: none; } .idx .short { display: inline; } .idx.hasdoor .look { display: none; } }   /* short names; the row itself is the door (same canOpen gate), so the name keeps its room */
@@ -732,7 +743,16 @@
     const free = travel(0), baseR = Math.min(laneW * 0.34, 0.095, (free[1] - free[0]) * 0.13) * pulseNow;   // the heartbeat: exactly 1 when pulseAmp is 0
     const band = travel(baseR * 1.4 * 1.25);   // biggest blob (size 1.4) with its droplets bunched: body edge at (Σr⁴)^¼ ≈ 1.23 R
     const span = band[1] - band[0];
-    const bandI = stacked ? [band[0] + span * 0.55, band[1]] : band, bandE = stacked ? [band[0], band[0] + span * 0.22] : band;
+    const bandE = stacked ? [band[0], band[0] + span * 0.22] : band;
+    // the economy row's shelf: from under its lowest possible label to just over its tallest possible wax (fixed per layout, not per frame)
+    const eR = stacked && aspect < 0.8 ? Math.min(22 / innerHeight, wE * 0.48) : Math.min(baseR * 1.4 * 0.75, wE * 0.36) * 1.23;
+    fam.shelf = stacked ? [bandE[0] - eR - 26 / innerHeight, bandE[1] + eR + 10 / innerHeight] : null;
+    // part 2 (Clark 10-08): a stock label hangs (h + 4)px under its wax and must stay over the shelf, so the stocks' floor
+    // leaves that strip plus the biggest core's reach under its centre. Ponytail: worst-case core (size 1.4); a satellite
+    // flung lower than that pulls its label onto its own wax (the floor below still holds). Upgrade: per-lane floors.
+    const labY = ((fam.labH || 15) + 6) / innerHeight;
+    const bandI = stacked ? [Math.min(band[1], Math.max(band[0] + span * 0.55, fam.shelf[1] + labY + baseR * 1.4 * 1.1)), band[1]] : band;
+    fam.wEpx = wE * innerHeight;   // one economy lane, CSS px: ui() caps each economy label at it
     fam.stacked = stacked && aspect < 0.8; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
     const top = [0, 0];   // each family's highest wax this frame: its caption rides just above it
     let n = 0;
@@ -759,16 +779,13 @@
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
       });
-      L.tagX = cx / aspect; L.tagY = isE ? low : low - 0.035;   // every label right under ITS blob; an economy label hangs its TOP 4px under the wax (ui() knows its height). r3: a shared baseline sat 40-100px under floating blobs
+      L.tagX = cx / aspect; L.tagY = isE || !stacked ? low : Math.max(low, fam.shelf[1] + labY);   // every label right under ITS blob, its TOP 4px under the wax (ui() knows its height); a stock label never sinks into the economy row (part 2: NASDAQ sat on Economy). r3: a shared baseline sat 40-100px under floating blobs
       top[isE ? 1 : 0] = Math.max(top[isE ? 1 : 0], L.hy + (L.hitR || 0) / 1.5);
     });
     // captions glide with small bobs and snap on a first sight or a big change (data just arrived)
     const glide = (cur, want) => cur == null || !isFinite(cur) || Math.abs(want - cur) > 0.04 ? want : cur + (want - cur) * 0.25;   // a caption trails its blob by a few frames, never by a screen
     const capY = Math.max(top[0], econ.length ? top[1] : 0) + 0.04;   // both captions on one line, over the tallest wax of either family
     fam.iY = glide(fam.iY, Math.min(capY, free[1] - 0.006));   // never into the mood block above the stage
-    // the economy row's shelf: from under its lowest possible label to just over its tallest possible wax (fixed per layout, not per frame)
-    const eR = stacked && aspect < 0.8 ? Math.min(22 / innerHeight, wE * 0.48) : Math.min(baseR * 1.4 * 0.75, wE * 0.36) * 1.23;
-    fam.shelf = stacked ? [bandE[0] - eR - 26 / innerHeight, bandE[1] + eR + 10 / innerHeight] : null;
     fam.eY = stacked && !fam.stacked ? fam.shelf[1] : fam.iY;   // wide: the ECONOMY caption sits ON its shelf's top line
     for (; n < N; n++) balls[n * 3 + 2] = 0;   // unused slots: radius 0 adds nothing to the field
     const heat = Mood.colour(avgPctShown);
@@ -832,11 +849,13 @@
     // A label never runs off either screen edge; an economy label that would touch any label already placed
     // drops below it, never under the bottom of the screen.
     const all = lanes.concat(econ), els = [...tags.children], W_ = innerWidth, H_ = innerHeight;
+    if (fam.wEpx) tags.style.setProperty("--laneE", Math.max(24, fam.wEpx - 8).toFixed(0) + "px");   // written before the reads below: one reflow
     const boxes = all.map((L, i) => { const s = els[i]; if (!s || L.tagX == null) return null;
       const w = s.offsetWidth, h = s.offsetHeight || 14, half = w / 2 / W_;
       const laneE = i >= 4 && fam.stacked;   // phone: an economy label is already confined to its 1/8 lane (max-width); no gutter shove, no push below a neighbour
-      const g = laneE ? 0 : 24 / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges
-      return { s, l: x - w / 2, r: x + w / 2, h, b: L.tagY * H_ - (i >= 4 ? h + 4 : 0), x, fixed: i < 4 }; });
+      const g = laneE ? 0 : (i >= 4 && fam.wEpx ? Math.min(24, Math.max(0, (fam.wEpx - w) / 2)) : 24) / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges, but an economy label never leaves its own lane for it
+      if (i < 4) fam.labH = h;   // draw() keeps a strip this tall between the two rows
+      return { s, l: x - w / 2, r: x + w / 2, h, b: L.tagY * H_ - h - 4, x, fixed: i < 4 }; });
     Mood.dodge(boxes, H_ - stage[1] + 2, H_ - stage[0]);   // never under the footer's top, never into the mood caption
     for (const B of boxes) if (B) { B.s.style.left = (B.x / W_ * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible"; }
     econ.forEach((L, k) => { const B = boxes[4 + k]; if (B) B.s.style.color = hex(Mood.labelTint(L.col)); });   // r4: an economy label wears its blob's colour (lightened), so a label's row reads at a glance
@@ -1362,7 +1381,7 @@
                   get inCell() { return inCell; }, cellNodes,
                   blobXY(key) { const H = innerHeight, L = lanes.concat(econ).find((l, i) => (data.indexes[i] ? data.indexes[i].key : l.key) === key);   // browser checks: where a blob is NOW, in client px
                                 return L && L.hx != null ? { x: L.hx * H, y: H - L.hy * H } : null; },
-                  blobs() { const H = innerHeight; return inCell ? [] : lanes.concat(econ).map((L, i) => ({ L, own: i >= 4 })).filter(o => o.L.hx != null && o.L.r).map(({ L, own }) => ({ x: L.hx * H, y: H - L.hy * H, r: L.r * H, own })); } };   // own: an economy blob keeps its body to itself (stocks merge by design)   // overlap sweep: every blob's core, client px
+                  blobs() { const H = innerHeight; return inCell ? [] : lanes.concat(econ).map((L, i) => ({ L, i, own: i >= 4 })).filter(o => o.L.hx != null && o.L.r).map(({ L, i, own }) => ({ x: L.hx * H, y: H - L.hy * H, r: L.r * H, own, i })); } };   // own: an economy blob keeps its body to itself (stocks merge by design)   // overlap sweep: every blob's core, client px; i = its label's index in #tags
 })();
 </script>
 </body>
