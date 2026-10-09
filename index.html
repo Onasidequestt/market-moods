@@ -88,6 +88,7 @@
   .mood .key { margin: 6px auto 0; padding: 0 16px; font-size: 12px; color: var(--ink-3); max-width: 560px; }
   .tags { position: fixed; inset: 0; pointer-events: none; }
   .tags span.door { pointer-events: auto; cursor: pointer; }
+  .tags span.onwax { background: rgba(10, 6, 16, .78); padding: 1px 6px; border-radius: 7px; text-shadow: none; }   /* part 2: no room under its blob (a short stage), so it sits on its own wax on a dark pill, not as a strike-through */
   .tags span.econ { font-size: 10px; white-space: normal; width: max-content; max-width: var(--laneE, none); text-align: center; line-height: 1.15; }   /* part 2: a label wider than its lane wraps inside it (CENTRAL BANKS was shoved onto Shipping at 800-840px); max-content: no early wrap at the right edge */
   @media (max-width: 480px) { .tags span.econ { font-size: 9px; letter-spacing: .03em; } }
   .fam { position: fixed; inset: 0; pointer-events: none; }
@@ -751,7 +752,8 @@
     // leaves that strip plus the biggest core's reach under its centre. Ponytail: worst-case core (size 1.4); a satellite
     // flung lower than that pulls its label onto its own wax (the floor below still holds). Upgrade: per-lane floors.
     const labY = ((fam.labH || 15) + 6) / innerHeight;
-    const bandI = stacked ? [Math.min(band[1], Math.max(band[0] + span * 0.55, fam.shelf[1] + labY + baseR * 1.4 * 1.1)), band[1]] : band;
+    // ...but the stocks keep at least 30% of the band to move in (higher = up must still show); on a short stage the strip gives way
+    const bandI = stacked ? [Math.min(band[1] - span * 0.3, Math.max(band[0] + span * 0.55, fam.shelf[1] + labY + baseR * 1.4 * 1.1)), band[1]] : band;
     fam.wEpx = wE * innerHeight;   // one economy lane, CSS px: ui() caps each economy label at it
     fam.stacked = stacked && aspect < 0.8; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
     const top = [0, 0];   // each family's highest wax this frame: its caption rides just above it
@@ -779,7 +781,7 @@
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
         n++;
       });
-      L.tagX = cx / aspect; L.tagY = isE || !stacked ? low : Math.max(low, fam.shelf[1] + labY);   // every label right under ITS blob, its TOP 4px under the wax (ui() knows its height); a stock label never sinks into the economy row (part 2: NASDAQ sat on Economy). r3: a shared baseline sat 40-100px under floating blobs
+      L.tagX = cx / aspect; L.tagY = isE || !stacked ? low : Math.max(low, fam.shelf[1] + labY); L.onWax = L.tagY > low + 1e-6;   // every label right under ITS blob, its TOP 4px under the wax (ui() knows its height); a stock label never sinks into the economy row (part 2: NASDAQ sat on Economy). r3: a shared baseline sat 40-100px under floating blobs
       top[isE ? 1 : 0] = Math.max(top[isE ? 1 : 0], L.hy + (L.hitR || 0) / 1.5);
     });
     // captions glide with small bobs and snap on a first sight or a big change (data just arrived)
@@ -854,7 +856,7 @@
       const w = s.offsetWidth, h = s.offsetHeight || 14, half = w / 2 / W_;
       const laneE = i >= 4 && fam.stacked;   // phone: an economy label is already confined to its 1/8 lane (max-width); no gutter shove, no push below a neighbour
       const g = laneE ? 0 : (i >= 4 && fam.wEpx ? Math.min(24, Math.max(0, (fam.wEpx - w) / 2)) : 24) / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges, but an economy label never leaves its own lane for it
-      if (i < 4) fam.labH = h;   // draw() keeps a strip this tall between the two rows
+      if (i < 4) { fam.labH = h; s.classList.toggle("onwax", !!L.onWax); }   // draw() keeps a strip this tall between the two rows; a label with no room under its blob wears a backing
       return { s, l: x - w / 2, r: x + w / 2, h, b: L.tagY * H_ - h - 4, x, fixed: i < 4 }; });
     Mood.dodge(boxes, H_ - stage[1] + 2, H_ - stage[0]);   // never under the footer's top, never into the mood caption
     for (const B of boxes) if (B) { B.s.style.left = (B.x / W_ * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible"; }
