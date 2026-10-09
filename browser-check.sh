@@ -6,6 +6,7 @@
 #  3. inside the S&P 500 (#cell): the caption's counts (rising / against the index) match a
 #     count made HERE from the data files at the page's own moment; the blobs are really drawn;
 #     "All 500" shows every priced member; with no company file there is no door (the lamp draws no specks since 10-07)
+#  4. overlap: both pages resized live 320→1920 + short windows; no two element boxes may touch (tools/overlap_sweep.mjs)
 # usage: sh browser-check.sh     (serves this folder on 127.0.0.1:8766 while it runs)
 cd "$(dirname "$0")" || exit 2
 B="$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-152.0.7977.42/chrome-headless-shell-mac-arm64/chrome-headless-shell"
@@ -435,4 +436,10 @@ if bad: print("✘ browser-check scrub: " + "; ".join(bad)); sys.exit(1)
 print(f"✓ browser-check scrub: #scrub=0/0.5/1 land on the expected bars (of {nbars}); mood tint, breathing glow, {nbars}-point sparkline, clock at handle {lefts}")
 EOF
 
+# overlap (Clark 10-08 "it smashes together all the elements… everything overlaps" on a resized laptop window):
+# both pages loaded once, then RESIZED live through 320→1920 (40px steps, 800 tall) plus short laptop and phone
+# windows; any two text/control boxes that touch, a box past the edge, wax over text, or two economy blobs on
+# each other fails. tools/overlap_sweep.mjs holds the rules.
+node tools/overlap_sweep.mjs http://127.0.0.1:8766/ "$B" > "$T/overlap.txt"; OV=$?   # its own exit, not a pipe's (sh has no pipefail)
+tail -25 "$T/overlap.txt"; [ "$OV" -eq 0 ] || RC=1
 exit $RC

@@ -317,4 +317,12 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
   }
   ok(fs.existsSync(path.join(__dirname, "assets/humble_crest.png")), "crest file shipped");
 }
+// Mood.dodge (Clark 10-08 overlap): a label pushed off a neighbour never crosses the floor (the footer's top); it goes above instead
+{ const d = M.dodge([{ l: 0, r: 50, b: 200, h: 14, fixed: true }, { l: 10, r: 60, b: 195, h: 14 }], 190, 600);
+  ok(d[1].b === 216, "dodge: no room below the floor -> the label sits just above its neighbour");
+  const e = M.dodge([{ l: 0, r: 50, b: 300, h: 14, fixed: true }, { l: 10, r: 60, b: 295, h: 14 }], 190, 600);
+  ok(e[1].b === 284, "dodge: room below -> the label drops just under its neighbour");
+  ok(M.dodge([{ l: 0, r: 50, b: 40, h: 14 }], 179, 600)[0].b === 179 && M.dodge([{ l: 0, r: 50, b: 700, h: 14 }], 0, 600)[0].b === 586, "dodge: every label stays between floor and ceiling");
+  const f = M.dodge([{ l: 0, r: 50, b: 300, h: 14, fixed: true }, { l: 100, r: 150, b: 300, h: 14 }], 0, 600);
+  ok(f[1].b === 300, "dodge: a label that touches nothing does not move"); }
 console.log(`✓ market-moods check: ${n} asserts`);

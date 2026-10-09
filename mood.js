@@ -222,7 +222,25 @@
     return t.map(v => v + (1 - v) * k);
   }
 
-  const api = { colour, labelTint, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
+  // labels that would touch: boxes in CSS px measured from the window bottom {l, r, b, h, fixed}. In order, a movable
+  // label that touches one already placed tries just below it, and if that would cross the floor (the footer's top)
+  // just above it instead; every label stays between floor and ceil. Both pages place their labels with it
+  // (Clark 10-08: a label pushed below its neighbour had no floor and sat on the day buttons).
+  function dodge(boxes, floor, ceil) {
+    const placed = [], clamp = B => { B.b = Math.max(floor, Math.min(ceil - B.h, B.b)); };
+    const touch = B => placed.find(P => B.l < P.r + 4 && B.r > P.l - 4 && B.b < P.b + P.h + 2 && B.b + B.h > P.b - 2);
+    boxes.forEach(B => { if (!B) return; clamp(B);
+      if (!B.fixed) for (let guard = 0, up = false; guard < 12; guard++) {
+        const hit = touch(B); if (!hit) break;
+        const below = hit.b - B.h - 2;
+        if (!up && below >= floor) B.b = below; else { up = true; B.b = hit.b + hit.h + 2; }
+        clamp(B);
+      }
+      placed.push(B); });
+    return boxes;
+  }
+
+  const api = { colour, labelTint, dodge, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
                 against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER,
                 fear, fearWord, volumeLevel, pulseAmp, volumeWord, avgSeries, sectorHue, sectorShort, scrubPos,
                 econMove, econChop, econSlow, econGroupPct, econAsOf };

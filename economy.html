@@ -23,10 +23,13 @@
   body.incell canvas#lamp { visibility: hidden; }
   body.incell canvas#cell { pointer-events: auto; }
   body.incell .mood, body.incell .tags, body.incell .readouts { display: none; }
-  .chrome { position: fixed; inset: 0; pointer-events: none; }
+  /* LAYOUT (Clark 10-08 "everything overlaps" when a laptop window is resized): header, mood caption, stage and footer
+     STACK in one column, each taking its real height, so no block can sit on another at any width or height.
+     The lamp reads the stage between them (travel()). Was: each block absolutely placed at a guessed top: 11% / 180px. */
+  .chrome { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column; }
   .chrome > * { pointer-events: auto; }
   .num { font-variant-numeric: tabular-nums; }
-  header { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; justify-content: space-between;
+  header { position: relative; flex: none; display: flex; align-items: flex-start; justify-content: space-between;
     gap: 12px; padding: max(16px, env(safe-area-inset-top)) 16px 0; pointer-events: none; }
   header > * { pointer-events: auto; }
   .brand { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -38,12 +41,12 @@
   .brand .tag { font-size: 11px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-3); margin-top: -2px; }
   .credit { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; justify-content: center; text-align: left;
     padding: 2px 8px 0; font-size: 14px; line-height: 1.3; color: var(--ink-2); text-decoration: none; }
-  .credit img { height: 60px; width: auto; flex: none; filter: invert(1) brightness(1.2); }
+  .credit img { height: 60px; width: auto; flex: none; }   /* the crest file is light ink already: a CSS filter drew it black in WebKit (10-08) */
   .credit span { max-width: 34ch; text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; }
   .credit:hover span, .credit:focus-visible span { color: var(--ink); text-decoration-color: var(--ink); }
   .credit:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 6px; }
   body.incell .credit { display: none; }
-  @media (max-width: 900px) { header { flex-wrap: wrap; } .brand { flex: 1 1 0; } .tools { flex: none; } .status { white-space: normal; }
+  @media (max-width: 900px) { header { flex-wrap: wrap; } .brand { flex: 1 1 0; min-width: min-content; } .tools { flex: none; } .status { white-space: normal; }
     .credit { order: 3; flex-basis: 100%; justify-content: flex-start; padding: 6px 0 0; font-size: 12px; } .credit img { height: 48px; } .credit span { max-width: none; } }
   @media (max-width: 520px) { .brand .mark { width: 34px; height: 34px; } .brand h1 { font-size: 20px; white-space: nowrap; } .brand .tag { display: none; } .brand { gap: 4px; } .credit img { height: 44px; } .credit { font-size: 12px; } }
   .status { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);
@@ -60,7 +63,7 @@
   .btn:hover { border-color: rgba(244, 236, 247, .32); }
   .btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .btn[hidden] { display: none; }
-  .mood, .cellcap { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; }
+  .mood, .cellcap { position: relative; flex: none; margin-top: clamp(4px, 2.5vh, 28px); text-align: center; pointer-events: none; }
   .cellcap { display: none; }
   body.incell .cellcap { display: block; }
   .mood .word, .cellcap .word { font-size: clamp(30px, 5.4vw, 58px); font-weight: 200; letter-spacing: -.02em; line-height: 1.05;
@@ -109,12 +112,12 @@
      phone's, keyed on height — the footer scrolls so the stage keeps room for the blobs (10-07: a short laptop window) */
   @media (min-width: 700px) and (max-height: 760px) {   /* at 560px tall the stage keeps a ~135px radius and its labels: short cap, no key line, 20vh footer */
     body.incell footer { max-height: 20vh; max-height: 20dvh; overflow-y: auto; }
-    body.incell .cellcap { top: 8%; } body.incell .cellcap .word { font-size: 30px; } body.incell .cellcap .key { display: none; } }
-  footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+    body.incell .cellcap .word { font-size: 30px; } body.incell .cellcap .key { display: none; } }
+  footer { position: relative; flex: none; margin-top: auto; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
   .notice { text-align: center; color: var(--ink-2); font-size: 14px; display: none; margin: 0 0 10px; }
   .notice.on { display: block; }
   .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }   /* r4: 8 groups = two full rows, no orphan */
-  .card { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: center; background: var(--glass); border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; cursor: pointer;   /* mm44: thin rows */
+  .card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: center; background: var(--glass); border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; cursor: pointer;   /* mm44: thin rows */
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); min-width: 0; color: inherit; font: inherit; text-align: left; }
   .card .name { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card .chip { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--ink-3); }
@@ -139,7 +142,6 @@
   dialog .close { margin-top: 16px; width: 100%; }
   @media (max-width: 640px) {
     .readouts { gap: 5px; }
-    .mood, .cellcap { top: max(12%, 180px); }
     .card { padding: 5px 6px; border-radius: 10px; grid-template-columns: minmax(0, 1fr); row-gap: 1px; }
     .card .pct { font-size: 13px; grid-column: 1; grid-row: 2; text-align: left; }
     .card .lvl { grid-row: 3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -154,6 +156,12 @@
     .key .short { display: inline; }
     .status { font-size: 11.5px; }
   }
+  /* a short window (phone on its side, a small laptop window): the header and caption give the stage room, so the
+     blobs never sit on the words. One rule for both pages, keyed on height. */
+  @media (max-height: 600px) { header { padding-top: max(10px, env(safe-area-inset-top)); } .brand .mark { width: 30px; height: 30px; } .brand h1 { font-size: 20px; }
+    .brand .tag { display: none; } .credit { font-size: 11.5px; } .credit img { height: 32px; } .credit span { max-width: none; }
+    .mood, .cellcap { margin-top: 2px; } .mood .word, .cellcap .word { font-size: 30px; } .mood .key, .cellcap .key { display: none; } .mood .sub, .cellcap .sub { margin-top: 4px; } }
+  @media (max-height: 600px) and (min-width: 700px) { .brand { flex: none; } .credit { order: 0; flex: 1 1 0; flex-basis: 0; padding: 0 8px; justify-content: center; } }   /* the credit beside the brand, not a row of its own */
 </style>
 </head>
 <body>
@@ -378,13 +386,14 @@
       uniform vec3 uBgTop; uniform vec3 uBgBot; uniform vec3 uHeat;
       void main(){
         vec2 q = gl_FragCoord.xy / uRes.y;
-        float f = 0.0; vec3 c = vec3(0.0);
+        float f = 0.0, ws = 0.0, fg = 0.0; vec3 c = vec3(0.0);
         for (int i = 0; i < ${NB}; i++) {
           vec2 d = q - uBalls[i].xy; float r = uBalls[i].z;
           float w = r * r / max(dot(d, d), 1e-5); w *= w;
-          f += w; c += uCols[i] * w;
+          ws += w; c += uCols[i] * w;
+          fg += w; if (i - (i / ${DROPS}) * ${DROPS} == ${DROPS - 1}) { f = max(f, fg); fg = 0.0; }
         }
-        c /= max(f, 1e-5);
+        c /= max(ws, 1e-5);   // a group's body is its own drops only (as on the front page's economy row): neighbours never fuse (Clark 10-08)
         float y = gl_FragCoord.y / uRes.y;
         vec3 bg = mix(uBgBot, uBgTop, smoothstep(0.0, 1.0, y));
         bg += uHeat * 0.22 * pow(1.0 - y, 3.0);
@@ -414,8 +423,10 @@
   }
   addEventListener("resize", resize); resize();
   const balls = new Float32Array(NB * 3), cols = new Float32Array(NB * 3);
+  let stage = [0, innerHeight];   // the stage's top and bottom in client px, as travel() last measured them (labels stay inside)
   function travel(maxR) {
     const H = innerHeight, top = $("mood").getBoundingClientRect().bottom, foot = $("readouts").getBoundingClientRect().top;
+    stage = [top, foot];
     canvas.dataset.edges = Math.round(top) + "," + Math.round(foot);
     const lo = (H - foot) / H + maxR + 0.05, hi = 1 - top / H - maxR - 0.01;
     return hi > lo ? [lo, hi] : [(lo + hi) / 2, (lo + hi) / 2];
@@ -425,7 +436,8 @@
     // phone: two rows of four (r3: eight lanes of 49px left ~35px blobs, a clipped edge blob and the stage half empty)
     const pad = 24 / innerHeight;   // r4: the edge lanes keep a 24px gutter, like the labels
     const lay = rows => { const per = Math.ceil(lanes.length / rows), laneW = (aspect - 2 * pad) / Math.max(1, per);
-      const baseR = Math.min(laneW * 0.34, 0.095), maxR = Math.min(baseR * 1.4, laneW * 0.36) * 1.25;   // the biggest blob that can be drawn (R is lane-capped below), not one that can't
+      // a short stage (phone on its side, 390px tall) shrinks the blobs to fit between the caption and the tiles (Clark 10-08)
+      const free = travel(0), baseR = Math.min(laneW * 0.34, 0.095, Math.max(0.02, (free[1] - free[0] - 0.06) / 3.5)), maxR = Math.min(baseR * 1.4, laneW * 0.36) * 1.25;   // the biggest blob that can be drawn (R is lane-capped below), not one that can't
       const band = travel(maxR); return { rows, per, laneW, baseR, maxR, band, t: rows === 2 ? (band[1] - band[0] - 2 * maxR - 0.05) / 2 : 0 }; };   // row gap: a blob over a blob plus a label
     let Ly = aspect < 0.8 && lanes.length > 4 ? lay(2) : lay(1);
     if (Ly.rows === 2 && Ly.t < 0.03) Ly = lay(1);   // a screen too short for two rows that can move: one row (never two rows stacked on one line)
@@ -650,20 +662,14 @@
     });
     const tags = $("tags");
     const ws = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetWidth : 0), hs = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetHeight : 0);   // read every size first, then write
-    lanes.forEach((L, i) => { if (L.tagX == null || !tags.children[i]) return; const s = tags.children[i];
-      const half = ws[i] / 2 / innerWidth, g = 24 / innerWidth;   // a 24px gutter: no label runs to the screen edge
-      s.style.left = (Math.min(1 - half - g, Math.max(half + g, L.tagX)) * 100).toFixed(2) + "%"; s.style.bottom = Math.max(0, L.tagY * innerHeight - hs[i] - 4).toFixed(1) + "px"; s.style.visibility = "visible";
-      s.style.color = hex(Mood.labelTint(L.col)); });   // r6: a label hangs its top 4px under ITS blob and wears the blob's tint (as on the front page)
-    // a label that would touch one already placed drops below it (narrow phones: 7 labels in 390px)
-    const placed = [];
-    for (const s of tags.children) { if (s.style.visibility !== "visible") continue;
-      let r = s.getBoundingClientRect();
-      for (let k = 0; k < 6; k++) {
-        const hit = placed.find(P => r.left < P.right + 4 && r.right > P.left - 4 && r.top < P.bottom + 2 && r.bottom > P.top - 2);
-        if (!hit) break;
-        s.style.bottom = Math.max(0, innerHeight - hit.bottom - r.height - 2) + "px"; r = s.getBoundingClientRect();
-      }
-      placed.push(r); }
+    const boxes = lanes.map((L, i) => { if (L.tagX == null || !tags.children[i]) return null;
+      const half = ws[i] / 2 / innerWidth, g = 24 / innerWidth, x = Math.min(1 - half - g, Math.max(half + g, L.tagX)) * innerWidth;   // a 24px gutter: no label runs to the screen edge
+      return { s: tags.children[i], x, l: x - ws[i] / 2, r: x + ws[i] / 2, h: hs[i], b: L.tagY * innerHeight - hs[i] - 4 }; });   // r6: a label hangs its top 4px under ITS blob
+    // a label that would touch one already placed drops below it, or above it at the footer (narrow phones: 7 labels in 390px)
+    Mood.dodge(boxes, innerHeight - stage[1] + 2, innerHeight - stage[0]);
+    lanes.forEach((L, i) => { const B = boxes[i]; if (!B) return;
+      B.s.style.left = (B.x / innerWidth * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible";
+      B.s.style.color = hex(Mood.labelTint(L.col)); });   // and wears the blob's tint (as on the front page)
     // read by economy-check.sh: each label's top and its blob's lowest wax (px from the bottom), and the label's luminance
     tags.dataset.geo = JSON.stringify(lanes.map((L, i) => { const s = tags.children[i]; if (!s || L.low == null) return null; const r = s.getBoundingClientRect(), c = getComputedStyle(s).color.match(/[\d.]+/g).map(v => v / 255);
       return [Math.round(innerHeight - r.top), Math.round(L.low * innerHeight), +((0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) * (c.length > 3 ? c[3] * 255 : 1)).toFixed(3)]; }));   // alpha counts: a 66% grey is dim
@@ -732,7 +738,8 @@
   // browser-check hook: where each blob is right now, in client px (panel-check.sh clicks there)
   window.__em = { get inCell() { return inCell; }, groupXY(key) { const H = innerHeight, i = G.findIndex(g => g.key === key), L = lanes[i];
                     return L && L.hx != null ? { x: L.hx * H, y: H - L.hy * H } : null; },
-                  memberXY(key) { const N = nodes.get(key); return N && N.dx != null ? { x: N.dx, y: N.dy } : null; } };
+                  memberXY(key) { const N = nodes.get(key); return N && N.dx != null ? { x: N.dx, y: N.dy } : null; },
+                  blobs() { const H = innerHeight; return inCell ? [] : lanes.filter(L => L.hx != null && L.r).map(L => ({ x: L.hx * H, y: H - L.hy * H, r: L.r * H, own: true })); } };   // overlap sweep: every blob's core, client px
 })();
 </script>
 </body>

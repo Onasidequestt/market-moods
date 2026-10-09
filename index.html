@@ -32,13 +32,16 @@
   body.incell canvas#lamp { visibility: hidden; }
   body.incell canvas#cell { pointer-events: auto; }
   body.incell .mood, body.incell .tags, body.incell .readouts { display: none; }
-  .chrome { position: fixed; inset: 0; pointer-events: none; transition: opacity .6s ease; }
+  /* LAYOUT (Clark 10-08 "everything overlaps" when a laptop window is resized): header, mood caption, stage and footer
+     STACK in one column, each taking its real height, so no block can sit on another at any width or height.
+     The lamp reads the stage between them (travel()). Was: each block absolutely placed at a guessed top: 11% / 180px. */
+  .chrome { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column; transition: opacity .6s ease; }
   body.bare .chrome { opacity: 0; }
   body.bare .chrome * { pointer-events: none !important; }
   .chrome > * { pointer-events: auto; }
   .num { font-variant-numeric: tabular-nums; }
 
-  header { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; justify-content: space-between;
+  header { position: relative; flex: none; display: flex; align-items: flex-start; justify-content: space-between;
     gap: 12px; padding: max(16px, env(safe-area-inset-top)) 16px 0; pointer-events: none; }
   header > * { pointer-events: auto; }
   .brand { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -50,12 +53,12 @@
   .brand .tag { font-size: 11px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-3); margin-top: -2px; }
   .credit { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; justify-content: center; text-align: left;
     padding: 2px 8px 0; font-size: 14px; line-height: 1.3; color: var(--ink-2); text-decoration: none; }
-  .credit img { height: 60px; width: auto; flex: none; filter: invert(1) brightness(1.2); }
+  .credit img { height: 60px; width: auto; flex: none; }   /* the crest file is light ink already: a CSS filter drew it black in WebKit (10-08) */
   .credit span { max-width: 34ch; text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; }
   .credit:hover span, .credit:focus-visible span { color: var(--ink); text-decoration-color: var(--ink); }
   .credit:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 6px; }
   body.incell .credit { display: none; }
-  @media (max-width: 900px) { header { flex-wrap: wrap; } .brand { flex: 1 1 0; } .tools { flex: none; } .status { white-space: normal; }
+  @media (max-width: 900px) { header { flex-wrap: wrap; } .brand { flex: 1 1 0; min-width: min-content; } .tools { flex: none; } .status { white-space: normal; }
     .credit { order: 3; flex-basis: 100%; justify-content: flex-start; padding: 6px 0 0; font-size: 12px; } .credit img { height: 48px; } .credit span { max-width: none; } }
   @media (max-width: 520px) { .brand .mark { width: 34px; height: 34px; } .brand h1 { font-size: 20px; white-space: nowrap; } .brand .tag { display: none; } .brand { gap: 4px; } .credit img { height: 44px; } .credit { font-size: 12px; } }
   .status { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);
@@ -74,7 +77,7 @@
   .btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .btn svg { width: 14px; height: 14px; fill: currentColor; }
 
-  .mood { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; }
+  .mood { position: relative; flex: none; margin-top: clamp(4px, 2.5vh, 28px); text-align: center; pointer-events: none; }
   .mood .word { font-size: clamp(38px, 7vw, 76px); font-weight: 200; letter-spacing: -.02em; line-height: 1;
     text-shadow: 0 2px 30px rgba(0, 0, 0, .5); transition: color 1.2s ease; }
   .mood .sub { margin-top: 10px; font-size: 13px; color: var(--ink-2); letter-spacing: .04em; }
@@ -91,9 +94,9 @@
   .fam span { position: absolute; transform: translate(-50%, 0); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink); opacity: .9; white-space: nowrap;
     padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, .14); }
   .fam.stacked { display: none; }   /* phone: the two rows split stocks (top) from the economy (bottom); a caption there hit the index labels */
-  @media (max-width: 480px) { .tags span.econ { white-space: normal; max-width: 12.5vw; font-size: 9.5px; letter-spacing: 0; line-height: 1.15; text-align: center; } }   /* fits its 1/8 lane: no label leans on a neighbour, so none is pushed down */   /* "CENTRAL BANKS" wraps inside its lane, never into a neighbour */
+  .tags[data-lanes] span.econ { white-space: normal; max-width: 12.5vw; font-size: min(9.5px, 2.43vw); letter-spacing: 0; line-height: 1.15; text-align: center; }   /* [data-lanes] = the JS's 8-lane phone layout (fam.stacked), not a guessed width: fits its 1/8 lane: no label leans on a neighbour, so none is pushed down */   /* "CENTRAL BANKS" wraps inside its lane, never into a neighbour */
   body.incell .fam { display: none; }
-  .cellcap { position: absolute; left: 0; right: 0; top: 11%; text-align: center; pointer-events: none; display: none; }
+  .cellcap { position: relative; flex: none; margin-top: clamp(4px, 2.5vh, 28px); text-align: center; pointer-events: none; display: none; }
   body.incell .cellcap { display: block; }
   .cellcap .word { font-size: clamp(30px, 5.4vw, 58px); font-weight: 200; letter-spacing: -.02em; line-height: 1.05;
     text-shadow: 0 2px 30px rgba(0, 0, 0, .5); }
@@ -146,7 +149,7 @@
   .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink); white-space: nowrap; transition: bottom .25s linear; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }   /* r6: stock labels in full ink; economy labels wear their blob's tint */
 
-  footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+  footer { position: relative; flex: none; margin-top: auto; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
   .days { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
   .days[hidden] { display: none; }
   .btn[hidden] { display: none; }
@@ -211,14 +214,12 @@
     .idx .chop { display: none; }
     .idx .look { padding: 3px 8px; font-size: 11.5px; }
     .btn .lbl { display: none; }
-    .mood { top: max(15%, 180px); }
     .mood .key { font-size: 11px; }
     .mood .key .long { display: none; }
     .mood .key .short { display: inline; }
     .idx .long { display: none; }
     .idx .short { display: inline; }
     .status { font-size: 11.5px; }
-    .cellcap { top: max(12%, 150px); }
     .cellcap .sub { font-size: 12px; }
     .cellcap .key { font-size: 11px; }
     .cellcap .key .long { display: none; }
@@ -226,6 +227,16 @@
     .cellctl { gap: 6px 12px; }
     .btn.opt { padding: 0 9px; }
   }
+  /* a short window (phone on its side, a small laptop window): the header and caption give the stage room, so the
+     blobs never sit on the words. One rule for both pages, keyed on height. */
+  @media (max-height: 600px) { header { padding-top: max(10px, env(safe-area-inset-top)); } .brand .mark { width: 30px; height: 30px; } .brand h1 { font-size: 20px; }
+    .brand .tag { display: none; } .credit { font-size: 11.5px; } .credit img { height: 32px; } .credit span { max-width: none; }
+    .mood, .cellcap { margin-top: 2px; } .mood .word, .cellcap .word { font-size: 30px; } .mood .key, .cellcap .key { display: none; } .mood .sub, .cellcap .sub { margin-top: 4px; } }
+  @media (max-height: 600px) and (min-width: 700px) { .brand { flex: none; } .credit { order: 0; flex: 1 1 0; flex-basis: 0; padding: 0 8px; justify-content: center; } }   /* the credit beside the brand, not a row of its own */
+  @media (max-height: 600px) { .timeline { margin: 19px 0 8px; } .days { margin-bottom: 4px; } }
+  @media (max-height: 600px) and (min-width: 641px) {   /* short and wide: each index row is ONE line (name · move · door), the stage gets the height; the level is in its details panel */
+    .idx { grid-template-columns: minmax(0, 1fr) auto auto; } .idx .lvl, .idx .chop { display: none; } .idx .look { grid-column: 3; grid-row: 1; }
+    .idx .long { display: none; } .idx .short { display: inline; } .idx.hasdoor .look { display: none; } }   /* short names; the row itself is the door (same canOpen gate), so the name keeps its room */
 </style>
 </head>
 <body>
@@ -628,9 +639,11 @@
 
   // the height band blobs travel in: between the mood caption above and the timeline below,
   // measured from the real layout (phones wrap the caption), in units of canvas height from the floor
+  let stage = [0, innerHeight];   // the stage's top and bottom in client px, as travel() last measured them (labels stay inside)
   function travel(maxR) {
     const H = innerHeight, top = document.querySelector(".mood").getBoundingClientRect().bottom;
     const foot = [$("days"), $("timeline"), $("readouts")].find(el => !el.hidden).getBoundingClientRect().top;
+    stage = [top, foot];
     canvas.dataset.edges = Math.round(top) + "," + Math.round(foot);   // read by browser-check.sh
     const lo = (H - foot) / H + maxR + 0.05;        // + room for the label under the blob
     const hi = 1 - top / H - maxR - 0.01;
@@ -710,8 +723,10 @@
     // Stocks ride the upper row and the economy the lower one, each family spread over the whole width, each with its own up/down band.
     const stacked = econ.length > 0;   // two rows at EVERY width (10-01 ask: two rows, not one long one)
     const EW = 0.6, GAP = econ.length && !stacked ? 0.5 : 0;
-    const laneW = stacked ? aspect / 4 : aspect / (4 + GAP + EW * econ.length);
-    const wE = stacked ? aspect / Math.max(1, econ.length) : laneW * EW, x0E = stacked ? 0 : (4 + GAP) * laneW;
+    // wide: the STOCKS / ECONOMY captions own a left gutter, so lane 0's wax never drifts over them (Clark 10-08 overlap sweep)
+    const gut = stacked && aspect >= 0.8 && fam.w ? (fam.w + 32) / innerHeight : 0;
+    const laneW = stacked ? (aspect - gut) / 4 : aspect / (4 + GAP + EW * econ.length);
+    const wE = stacked ? (aspect - gut) / Math.max(1, econ.length) : laneW * EW, x0E = stacked ? gut : (4 + GAP) * laneW;
     // two rows must fit the free height between the mood block and the timeline: on a wide screen the old 0.095
     // radius filled it with the stocks alone, so cap the radius by that height (phones stay lane-limited).
     const free = travel(0), baseR = Math.min(laneW * 0.34, 0.095, (free[1] - free[0]) * 0.13) * pulseNow;   // the heartbeat: exactly 1 when pulseAmp is 0
@@ -723,7 +738,7 @@
     let n = 0;
     lanes.concat(econ).forEach((L, i) => {
       const isE = i >= 4, w = isE ? wE : laneW, bd = isE ? bandE : bandI;
-      const cx = isE ? x0E + (i - 4 + 0.5) * w : (i + 0.5) * laneW;
+      const cx = isE ? x0E + (i - 4 + 0.5) * w : gut + (i + 0.5) * laneW;
       let low = Infinity;
       const cy = bd[0] + L.h * (bd[1] - bd[0]);
       const amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
@@ -734,7 +749,7 @@
         const brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));   // break-away clock shared: equal chop, equal spread
         if (isE && stacked && !core) { balls[n * 3 + 2] = 0; n++; return; }   // phone: a small economy blob stays one clean drop
-        const R = isE ? Math.max(stacked && aspect < 0.8 ? 22 / innerHeight : 0, Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3))) : baseR * L.sz;   // phone: a 44px blob, a thumb's target (the shader keeps neighbours from bridging)   // an economy blob never outgrows its narrow lane; offsets scale with the blob
+        const R = isE ? Math.max(stacked && aspect < 0.8 ? Math.min(22 / innerHeight, w * 0.48) : 0, Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3))) : baseR * L.sz;   // phone: a 44px blob, a thumb's target (the shader keeps neighbours from bridging)   // an economy blob never outgrows its narrow lane; offsets scale with the blob
         const r = R * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? (isE && fam.stacked ? 0 : w * 0.06) : R * 0.45 * d.ax * drift) * amp, -room, room);   // phone: a 44px economy blob in a 49px lane holds its x
         const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
@@ -752,7 +767,7 @@
     const capY = Math.max(top[0], econ.length ? top[1] : 0) + 0.04;   // both captions on one line, over the tallest wax of either family
     fam.iY = glide(fam.iY, Math.min(capY, free[1] - 0.006));   // never into the mood block above the stage
     // the economy row's shelf: from under its lowest possible label to just over its tallest possible wax (fixed per layout, not per frame)
-    const eR = stacked && aspect < 0.8 ? 22 / innerHeight : Math.min(baseR * 1.4 * 0.75, wE * 0.36) * 1.23;
+    const eR = stacked && aspect < 0.8 ? Math.min(22 / innerHeight, wE * 0.48) : Math.min(baseR * 1.4 * 0.75, wE * 0.36) * 1.23;
     fam.shelf = stacked ? [bandE[0] - eR - 26 / innerHeight, bandE[1] + eR + 10 / innerHeight] : null;
     fam.eY = stacked && !fam.stacked ? fam.shelf[1] : fam.iY;   // wide: the ECONOMY caption sits ON its shelf's top line
     for (; n < N; n++) balls[n * 3 + 2] = 0;   // unused slots: radius 0 adds nothing to the field
@@ -821,15 +836,8 @@
       const w = s.offsetWidth, h = s.offsetHeight || 14, half = w / 2 / W_;
       const laneE = i >= 4 && fam.stacked;   // phone: an economy label is already confined to its 1/8 lane (max-width); no gutter shove, no push below a neighbour
       const g = laneE ? 0 : 24 / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges
-      return { s, l: x - w / 2, r: x + w / 2, h, b: Math.max(0, L.tagY * H_ - (i >= 4 ? h + 4 : 0)), x }; });
-    const placed = [];
-    boxes.forEach((B, i) => { if (!B) return;
-      if (i >= 4 && !fam.stacked) for (let guard = 0; guard < 8; guard++) {
-        const hit = placed.find(P => B.l < P.r + 4 && B.r > P.l - 4 && B.b < P.b + P.h + 2 && B.b + B.h > P.b - 2);
-        if (!hit) break; B.b = Math.max(0, hit.b - B.h - 2);
-        if (B.b === 0) break;
-      }
-      placed.push(B); });
+      return { s, l: x - w / 2, r: x + w / 2, h, b: L.tagY * H_ - (i >= 4 ? h + 4 : 0), x, fixed: i < 4 }; });
+    Mood.dodge(boxes, H_ - stage[1] + 2, H_ - stage[0]);   // never under the footer's top, never into the mood caption
     for (const B of boxes) if (B) { B.s.style.left = (B.x / W_ * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible"; }
     econ.forEach((L, k) => { const B = boxes[4 + k]; if (B) B.s.style.color = hex(Mood.labelTint(L.col)); });   // r4: an economy label wears its blob's colour (lightened), so a label's row reads at a glance
     // read by economy-check.sh: each economy label's box and its blob's bottom/radius, CSS px from the bottom, this frame
@@ -840,10 +848,12 @@
     // the two family captions (Stocks / Economy): above each family on a wide screen, at the left of each row on a phone
     const fm = $("fam");
     if (fm) { fm.hidden = !econ.length || fam.iY == null;   // never shown before draw() has given it a place
-      fm.classList.toggle("stacked", !!fam.stacked);
-      const [cs, ce] = fm.children;
+      fm.classList.toggle("stacked", !!fam.stacked); tags.toggleAttribute("data-lanes", !!fam.stacked);
+      const [cs, ce] = fm.children; if (!fm.hidden) fam.w = Math.max(cs.offsetWidth, ce.offsetWidth);   // draw() keeps the captions' gutter this wide
       cs.style.left = ce.style.left = fam.stacked ? "16px" : "24px"; cs.style.transform = ce.style.transform = "none";   // r4: each caption heads its row at the left edge, not floating mid-screen among the stocks
-      cs.style.bottom = (fam.iY * 100).toFixed(2) + "%"; ce.style.bottom = (fam.eY * 100).toFixed(2) + "%"; }
+      const cb = [cs, ce].map((c, k) => ({ l: 0, r: c.offsetWidth, h: c.offsetHeight, b: (k ? fam.eY : fam.iY) * H_, fixed: !k }));
+      Mood.dodge(cb, H_ - stage[1] + 2, H_ - stage[0]);   // a squashed stage (phone on its side) put the two captions on one line
+      cs.style.bottom = cb[0].b.toFixed(1) + "px"; ce.style.bottom = cb[1].b.toFixed(1) + "px"; }
     $("moodWord").textContent = Mood.moodWord(avgPctShown);
     $("moodWord").style.color = hex(Mood.colour(avgPctShown).map(v => v * 0.35 + 0.65));
     $("moodSub").textContent = "Average move " + fmtPct(avgPctShown);
@@ -1351,7 +1361,8 @@
   window.__mm = { get mode() { return mode; }, get pos() { return pos; }, lanes, get data() { return data; }, gl: !!gl,
                   get inCell() { return inCell; }, cellNodes,
                   blobXY(key) { const H = innerHeight, L = lanes.concat(econ).find((l, i) => (data.indexes[i] ? data.indexes[i].key : l.key) === key);   // browser checks: where a blob is NOW, in client px
-                                return L && L.hx != null ? { x: L.hx * H, y: H - L.hy * H } : null; } };
+                                return L && L.hx != null ? { x: L.hx * H, y: H - L.hy * H } : null; },
+                  blobs() { const H = innerHeight; return inCell ? [] : lanes.concat(econ).map((L, i) => ({ L, own: i >= 4 })).filter(o => o.L.hx != null && o.L.r).map(({ L, own }) => ({ x: L.hx * H, y: H - L.hy * H, r: L.r * H, own })); } };   // own: an economy blob keeps its body to itself (stocks merge by design)   // overlap sweep: every blob's core, client px
 })();
 </script>
 </body>
