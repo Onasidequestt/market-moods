@@ -101,6 +101,9 @@ for (const SIZE of ["390,844", "1440,900"]) {
   // r6: on the economy page too, each label hangs right under ITS blob (unless pushed below a neighbour) and is bright enough
   const eg = JSON.parse(dec(attr(L, /<div class="tags"[^>]*data-geo="([^"]*)"/) || "[]")).filter(Boolean);
   ok(eg.length === e.groups.length && eg.every(([top, low]) => top <= low && top >= low - 12), `${tag}: every economy-page label hangs right under its blob (${eg.map(g => g[0] + "/" + g[1]).join(" ")})`);
+  // mm43: the Humble credit row is in the header, and the mood word starts below that row (phone: the header wraps to three rows)
+  const hd = JSON.parse(dec(attr(L, /<div class="tags"[^>]*data-head="([^"]*)"/) || "[0,0,false]"));
+  ok(hd[2] === true && hd[1] >= hd[0], `${tag}: Humble credit sits in the header and the mood word clears it (credit bottom ${hd[0]}px, mood top ${hd[1]}px)`);
   ok(eg.every(g => g[2] >= 0.7), `${tag}: economy-page labels are bright enough to read (${eg.map(g => g[2]).join(" ")})`);
   ok(new RegExp(`class="tags"[^>]*>(<span[^>]*>[^<]+<\\/span>){${e.groups.length}}`).test(L), `${tag}: one label per blob (${e.groups.length})`);
   for (const K of keys) {

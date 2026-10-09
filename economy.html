@@ -667,6 +667,10 @@
     // read by economy-check.sh: each label's top and its blob's lowest wax (px from the bottom), and the label's luminance
     tags.dataset.geo = JSON.stringify(lanes.map((L, i) => { const s = tags.children[i]; if (!s || L.low == null) return null; const r = s.getBoundingClientRect(), c = getComputedStyle(s).color.match(/[\d.]+/g).map(v => v / 255);
       return [Math.round(innerHeight - r.top), Math.round(L.low * innerHeight), +((0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) * (c.length > 3 ? c[3] * 255 : 1)).toFixed(3)]; }));   // alpha counts: a 66% grey is dim
+    // read by economy-check.sh (mm43): credit-row bottom, mood-word top, and whether the Humble credit row lives inside the header
+    { const hd = document.querySelector('header'), md = document.getElementById('mood');
+      const cr = document.querySelector('header .credit');
+      tags.dataset.head = JSON.stringify([Math.round(cr ? cr.getBoundingClientRect().bottom : hd.getBoundingClientRect().bottom), Math.round(md.getBoundingClientRect().top), !!cr]); }
     // the biggest single mover among market-traded members, said in words: real data, never a slogan
     const fast = G.flatMap(g => g.members.filter(m => !Mood.econSlow(m)));
     const big = fast.slice().sort((a, b) => Math.abs(b.mv.pct) - Math.abs(a.mv.pct))[0];
