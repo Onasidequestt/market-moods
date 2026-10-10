@@ -91,6 +91,7 @@
   .tags span.onwax { background: rgba(10, 6, 16, .78); padding: 1px 6px; border-radius: 7px; text-shadow: none; }   /* part 2: no room under its blob (a short stage), so it sits on its own wax on a dark pill, not as a strike-through */
   .tags span.econ { font-size: 10px; white-space: normal; width: max-content; max-width: var(--laneE, none); text-align: center; line-height: 1.15; }   /* part 2: a label wider than its lane wraps inside it (CENTRAL BANKS was shoved onto Shipping at 800-840px); max-content: no early wrap at the right edge */
   @media (max-width: 480px) { .tags span.econ { font-size: 9px; letter-spacing: .03em; } }
+  @media (max-width: 360px) { .tags span.onwax:not(.econ) { font-size: 9.5px; letter-spacing: .03em; padding: 1px 4px; } }   /* 10-09: a stock pill fits its 80px lane at 320 (RUSSELL leaned under Nasdaq's wax) */
   .fam { position: fixed; inset: 0; pointer-events: none; }
   .fam span { position: absolute; transform: translate(-50%, 0); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink); opacity: .9; white-space: nowrap;
     padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, .14); }
@@ -240,6 +241,8 @@
   @media (max-height: 600px) { header { padding-top: max(10px, env(safe-area-inset-top)); } .brand .mark { width: 30px; height: 30px; } .brand h1 { font-size: 20px; }
     .brand .tag { display: none; } .credit { font-size: 11.5px; } .credit img { height: 32px; } .credit span { max-width: none; }
     .mood, .cellcap { margin-top: 2px; } .mood .word, .cellcap .word { font-size: 30px; } .mood .key, .cellcap .key { display: none; } .mood .sub, .cellcap .sub { margin-top: 4px; } }
+  @media (min-height: 601px) and (max-height: 720px) and (min-width: 700px) {   /* 10-09: a laptop window (1366x640, 1280x720) gave two rows a 183px stage, the stocks drew as slivers; a lighter caption gives it ~70px back */
+    .brand .tag { display: none; } .mood, .cellcap { margin-top: 4px; } .mood .word, .cellcap .word { font-size: 48px; } .mood .key, .cellcap .key { display: none; } .mood .sub, .cellcap .sub { margin-top: 6px; } }
   @media (max-height: 600px) and (min-width: 700px) { .brand { flex: none; } .credit { order: 0; flex: 1 1 0; flex-basis: 0; padding: 0 8px; justify-content: center; } }   /* the credit beside the brand, not a row of its own */
   @media (max-height: 600px) { .timeline { margin: 19px 0 8px; } .days { margin-bottom: 4px; } }
   @media (max-height: 600px) and (max-width: 640px) {   /* part 2: a short phone (320x568) had a 61px stage for two rows; as on a short wide window the row itself is the door and the level waits in the cell */
@@ -609,7 +612,7 @@
           if (i < ${4 * DROPS}) f += w;
           else { int gi = (i - ${4 * DROPS}) / ${ECON_DROPS}; if (gi != g) { fe = max(fe, fg); fg = 0.0; g = gi; } fg += w; }
         }
-        f += max(fe, fg);   // an economy blob's body is its own drops only: 8 neighbours a lane apart never bridge (phone lanes are ~49px)
+        f = max(f, max(fe, fg));   // an economy blob's body is its own drops only: 8 neighbours a lane apart never bridge (phone lanes are ~49px); and the two rows never bridge either (10-09: a low Nasdaq summed with Debt drew one smashed body)
         c /= max(ws, 1e-5);
         float y = gl_FragCoord.y / uRes.y;
         vec3 bg = mix(uBgBot, uBgTop, smoothstep(0.0, 1.0, y));
@@ -757,12 +760,24 @@
     fam.wEpx = wE * innerHeight;   // one economy lane, CSS px: ui() caps each economy label at it
     fam.stacked = stacked && aspect < 0.8; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
     const top = [0, 0];   // each family's highest wax this frame: its caption rides just above it
+    // 10-09 (Clark: "smashes together"): a stock drop never reaches the economy row. The row's tallest wax ends 10px under the
+    // shelf line, so a drop's body (1.15 r, bunched) stops 4px under it: a 6px gap at worst. A lane too big to fit between that and
+    // the mood block shrinks; one that would have to shrink past half its size is left as before and the frame is 'squeezed'
+    // (smallest phones, a phone on its side: the names sit on the wax there).
+    const yMin = stacked && fam.shelf ? fam.shelf[1] - 4 / innerHeight : -Infinity;
+    fam.squeezed = false;
     let n = 0;
     lanes.concat(econ).forEach((L, i) => {
       const isE = i >= 4, w = isE ? wE : laneW, bd = isE ? bandE : bandI;
       const cx = isE ? x0E + (i - 4 + 0.5) * w : gut + (i + 0.5) * laneW;
-      let low = Infinity;
-      const cy = bd[0] + L.h * (bd[1] - bd[0]);
+      let low = Infinity; L.parts = [];   // every drop drawn this frame (overlap sweep: a stock's satellites, not just its core)
+      // a stock lane's size and floor (10-09): shrink to fit over the economy row, and map its height into what is left, so
+      // higher = up still reads (clamping instead stacked every low mover on one line)
+      const Rs = baseR * L.sz, rCap = (free[1] - yMin) / 2.4;   // body 1.15 r under the centre, 1.25 r over it
+      let R2 = Rs;
+      if (!isE && Rs > rCap) { if (rCap >= 0.5 * Rs) R2 = rCap; else fam.squeezed = true; }
+      const fit = isE || R2 <= rCap, lo = isE || !fit ? bd[0] : Math.max(bd[0], yMin + 1.15 * R2);
+      const cy = lo + L.h * Math.max(0, bd[1] - lo);
       const amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
       L.drops.forEach((d, k) => {
         const core = k === 0;
@@ -772,10 +787,12 @@
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));   // break-away clock shared: equal chop, equal spread
         if (isE && stacked && !core) { balls[n * 3 + 2] = 0; n++; return; }   // phone: a small economy blob stays one clean drop
         const R = isE ? Math.max(stacked && aspect < 0.8 ? Math.min(22 / innerHeight, w * 0.48) : 0, Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3))) : baseR * L.sz;   // phone: a 44px blob, a thumb's target (the shader keeps neighbours from bridging)   // an economy blob never outgrows its narrow lane; offsets scale with the blob
-        const r = R * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
-        const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? (isE && fam.stacked ? 0 : w * 0.06) : R * 0.45 * d.ax * drift) * amp, -room, room);   // phone: a 44px economy blob in a 49px lane holds its x
-        const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
+        const Rd = isE ? R : R2, r = Rd * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
+        const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? (isE && fam.stacked ? 0 : w * 0.06) : Rd * 0.45 * d.ax * drift) * amp, -room, room);   // phone: a 44px economy blob in a 49px lane holds its x
+        let y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : Rd * 1.6 * d.ay * drift) * amp, bd[0], Math.max(bd[1], lo));
+        if (!isE && fit) y = Math.max(y, yMin + 1.15 * r);
         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
+        L.parts.push([x, y, r]);
         if (core) { L.hx = x; L.hy = y; L.r = r; L.hitR = isE ? Math.max(r * 1.5, w * 0.45) : r * 1.5; }   // tap target: a small economy blob gets its lane's width
         low = Math.min(low, y - r * 1.1);
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
@@ -1383,6 +1400,8 @@
                   get inCell() { return inCell; }, cellNodes,
                   blobXY(key) { const H = innerHeight, L = lanes.concat(econ).find((l, i) => (data.indexes[i] ? data.indexes[i].key : l.key) === key);   // browser checks: where a blob is NOW, in client px
                                 return L && L.hx != null ? { x: L.hx * H, y: H - L.hy * H } : null; },
+                  shelf() { return inCell || !fam.shelf ? null : { top: innerHeight - fam.shelf[1] * innerHeight, squeezed: !!fam.squeezed }; },   // overlap sweep: the economy shelf's top line, client px; squeezed = stocks already at their smallest
+                  parts() { const H = innerHeight; return inCell ? [] : lanes.flatMap((L, i) => (L.parts || []).map(([x, y, r]) => ({ x: x * H, y: H - y * H, r: r * H, i }))); },   // overlap sweep: every stock drop, client px; i = its label's index
                   blobs() { const H = innerHeight; return inCell ? [] : lanes.concat(econ).map((L, i) => ({ L, i, own: i >= 4 })).filter(o => o.L.hx != null && o.L.r).map(({ L, i, own }) => ({ x: L.hx * H, y: H - L.hy * H, r: L.r * H, own, i })); } };   // own: an economy blob keeps its body to itself (stocks merge by design)   // overlap sweep: every blob's core, client px; i = its label's index in #tags
 })();
 </script>

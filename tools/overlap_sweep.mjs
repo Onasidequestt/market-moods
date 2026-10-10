@@ -57,6 +57,20 @@ const PROBE = `(() => {
   // two blobs that each keep their body to themselves (economy groups) must not sit on each other
   for (let i = 0; i < blobs.length; i++) for (let j = i + 1; j < blobs.length; j++) { const a = blobs[i], b = blobs[j];
     if (a.own && b.own && Math.hypot(a.x - b.x, a.y - b.y) < a.r + b.r - 1) bad.push("blob on blob at " + Math.round(a.x) + "," + Math.round(a.y) + " and " + Math.round(b.x) + "," + Math.round(b.y)); }
+  // 10-09: a stock's drops (core AND satellites) must not land on an economy blob or on any words but its own label.
+  // The core-only rules above missed it: at 1024x600 Nasdaq sank through the shelf onto Debt.
+  const parts = hook && hook.parts ? hook.parts() : [];
+  // the two rows keep apart: the economy row's tallest wax ends 10px under the shelf's top line, so no stock drop's body
+  // (1.15 r, bunched) may reach more than 4px under that line, unless the page says the stocks are squeezed (smallest phones)
+  const shelf = hook && hook.shelf ? hook.shelf() : null;
+  if (blobs.some(b => !b.own) && !(hook.parts && hook.shelf)) bad.push("cannot verify: stock blobs but no parts()/shelf() hook");
+  // 10-09: on a laptop-sized window (>= 1000x600) a stock blob is a blob, not a sliver (1366x640 drew them at r 15-19px)
+  if (vw >= 1000 && vh >= 600) for (const c of blobs) if (!c.own && c.r < 20) bad.push("stock " + c.i + " a sliver: r " + Math.round(c.r) + "px");
+  if (shelf && !shelf.squeezed) for (const p of parts) if (p.y + 1.15 * p.r > shelf.top + 4.5) bad.push("stock " + p.i + " wax into the economy row by " + Math.round(p.y + 1.15 * p.r - shelf.top - 4) + "px");
+  for (const p of parts) { for (const e of blobs) if (e.own && Math.hypot(p.x - e.x, p.y - e.y) < p.r + e.r - 1) bad.push("stock " + p.i + " wax on economy blob " + e.i);
+    for (const a of items) { if (tagIx(a.el) === p.i) continue; const b = a.b;
+      const dx = Math.max(b[0] - p.x, 0, p.x - b[2]), dy = Math.max(b[1] - p.y, 0, p.y - b[3]);
+      if (Math.hypot(dx, dy) < p.r - 1) bad.push("stock " + p.i + " wax × " + nm(a.el) + " '" + a.what + "'"); } }
   return JSON.stringify({ n: items.length, blobs: blobs.length, bad });
 })()`;
 
