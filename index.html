@@ -777,7 +777,8 @@
       let R2 = Rs;
       if (!isE && Rs > rCap) { if (rCap >= 0.5 * Rs) R2 = rCap; else fam.squeezed = true; }
       const fit = isE || R2 <= rCap, lo = isE || !fit ? bd[0] : Math.max(bd[0], yMin + 1.15 * R2);
-      const cy = lo + L.h * Math.max(0, bd[1] - lo);
+      const hi = isE || !fit ? bd[1] : Math.max(lo, free[1] - 1.25 * R2);   // its own ceiling: the mood block less ITS reach, not the biggest blob's (a short stage left no travel: a +1% day sat on the shelf)
+      const cy = lo + L.h * (hi - lo);
       const amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
       L.drops.forEach((d, k) => {
         const core = k === 0;
@@ -789,7 +790,7 @@
         const R = isE ? Math.max(stacked && aspect < 0.8 ? Math.min(22 / innerHeight, w * 0.48) : 0, Math.min(baseR * L.sz * (stacked ? 0.75 : EW), w * (stacked ? 0.36 : 0.3))) : baseR * L.sz;   // phone: a 44px blob, a thumb's target (the shader keeps neighbours from bridging)   // an economy blob never outgrows its narrow lane; offsets scale with the blob
         const Rd = isE ? R : R2, r = Rd * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? (isE && fam.stacked ? 0 : w * 0.06) : Rd * 0.45 * d.ax * drift) * amp, -room, room);   // phone: a 44px economy blob in a 49px lane holds its x
-        let y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : Rd * 1.6 * d.ay * drift) * amp, bd[0], Math.max(bd[1], lo));
+        let y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : Rd * 1.6 * d.ay * drift) * amp, bd[0], hi);
         if (!isE && fit) y = Math.max(y, yMin + 1.15 * r);
         balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
         L.parts.push([x, y, r]);
