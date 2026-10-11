@@ -37,4 +37,4 @@ jobs:
           LOOP_FORCE: "${{ github.event.inputs.force }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"
           CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
-          CF_PAGES_PROJECT: market-moods-preview   # our preview project; the client's own project goes here when his domain goes live
+          CF_PAGES_PROJECT: market-moods   # Clark's own Pages project (marketmoods.io), cutover 2026-10-10
