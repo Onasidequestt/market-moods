@@ -67,7 +67,18 @@ const PROBE = `(() => {
   const shelf = hook && hook.shelf ? hook.shelf() : null;
   if (blobs.some(b => !b.own) && !(hook.parts && hook.shelf)) bad.push("cannot verify: stock blobs but no parts()/shelf() hook");
   // 10-09: on a laptop-sized window (>= 1000x600) a stock blob is a blob, not a sliver (1366x640 drew them at r 15-19px)
-  if (vw >= 1000 && vh >= 600) for (const c of blobs) if (!c.own && c.r < 20) bad.push("stock " + c.i + " a sliver: r " + Math.round(c.r) + "px");
+  // r2 floors and the 2x: a stock core is >= 28px radius on a desktop-width window (>= 24 on a phone), an economy blob >= 14px; mean stock / mean economy
+  // is 1.8-2.2 on a desktop (phones keep the 22px thumb target, so only the floors apply there)
+  { const st = blobs.filter(c => !c.own), ec = blobs.filter(c => c.own);
+    for (const c of st) if (c.r < (vw >= 700 ? 27.5 : 24)) bad.push("stock " + c.i + " too small: r " + Math.round(c.r) + "px");
+    for (const c of ec) if (c.r < 13.5) bad.push("economy blob " + c.i + " too small: r " + Math.round(c.r) + "px");
+    if (vw >= 700 && st.length && ec.length) { const q = st.reduce((a, c) => a + c.r, 0) / st.length / (ec.reduce((a, c) => a + c.r, 0) / ec.length); if (q < 1.8 || q > 2.2) bad.push("stock/economy size ratio " + q.toFixed(2) + " (want 1.8-2.2)"); } }
+  // r2 anchoring (the 1920x900 frame had names 80-150px from their blobs and the sweep passed): each label sits within 24px of its own blob's edge
+  { const tagEls = [...document.querySelectorAll(".tags > *")];
+    for (const c of blobs) { if (c.i == null) continue; const t = tagEls[c.i]; if (!t || !shown(t)) continue; const b = t.getBoundingClientRect();
+      const own = (hook && hook.drops ? hook.drops() : parts).filter(p => p.i === c.i).concat([{ x: c.x, y: c.y, r: c.r }]);   // its core and every satellite drop: the name hangs under the lowest of them
+      const d = Math.min(...own.map(p => Math.hypot(Math.max(b.left - p.x, 0, p.x - b.right), Math.max(b.top - p.y, 0, p.y - b.bottom)) - p.r));
+      if (d > 24) bad.push("label '" + t.textContent.trim().slice(0, 14) + "' is " + Math.round(d) + "px from its blob"); } }
   if (shelf && !shelf.squeezed) for (const p of parts) if (p.y + 1.15 * p.r > shelf.top + 4.5) bad.push("stock " + p.i + " wax into the economy row by " + Math.round(p.y + 1.15 * p.r - shelf.top - 4) + "px");
   for (const p of parts) { for (const e of blobs) if (e.own && Math.hypot(p.x - e.x, p.y - e.y) < p.r + e.r - 1) bad.push("stock " + p.i + " wax on economy blob " + e.i);
     for (const a of items) { if (tagIx(a.el) === p.i) continue; const b = a.b;
@@ -97,13 +108,17 @@ for (const page of PAGES) {
   await size(...SIZES[0]); await send("Page.navigate", { url: BASE.replace(/\/?$/, "/") + page });
   for (let k = 0; k < 60; k++) { await sleep(250); if (await evalJS("!!(window.__mm || window.__em) && document.readyState === 'complete' && !!document.querySelector('.tags span[style*=visible]')")) break; }
   await sleep(1500);   // data in, first frames drawn
+  let first = true;   // a freshly loaded page needs ~30 drawn frames before its labels leave their first-paint spots
   for (const [w, h] of SIZES) {
     await size(w, h); await sleep(700);   // the lamp re-measures on its next frames; labels glide .25s
-    // 10-10: software WebGL at 1920 wide can take seconds per frame, so 700ms measured a layout still on the old size. Wait until
-    // the page's own layout read-outs (stage edges, shelf, label geometry) stop changing, 6s at most.
-    { const sig = () => evalJS("((a)=>(a[0].dataset.edges||'')+'|'+(a[1].dataset.shelf||'')+'|'+(a[1].dataset.geo||'')+'|'+innerWidth+'x'+innerHeight)([document.querySelector('canvas')||{dataset:{}},document.querySelector('.tags')||{dataset:{}}])");
-      if (w >= 1600) await sleep(3000);   // software WebGL: frames at this width take seconds, so equal reads can mean a stalled loop, not a settled layout
-      let prev = await sig(); for (let k = 0; k < 20; k++) { await sleep(300); const cur = await sig(); if (cur === prev) break; prev = cur; } }
+    // 10-10 r2: settle = the page has drawn >= 6 (14 at >=1600px wide) NEW animation frames since the resize (software WebGL at 1920 wide takes seconds per frame, so a
+    // fixed sleep measured labels still on the old layout), then the .25s label glide. Labels bob with their blobs, so equal reads never happen.
+    // Not settled in 25s = reported, not measured.
+    { await evalJS("window.__rafs = window.__rafs || 0; if (!window.__rafOn) { window.__rafOn = 1; (function t() { window.__rafs++; requestAnimationFrame(t); })(); }");
+      const f0 = await evalJS("window.__rafs"); let k = 0; for (; k < 160 && (await evalJS("window.__rafs")) - f0 < (w >= 1600 ? 16 : 12) + (first ? 24 : 0); k++) await sleep(500);
+      if (k >= 160) { console.log(`✘ overlap ${page} ${w}x${h}: too few frames drawn in 80s (cannot verify)`); total++; }
+      await sleep(600); first = false; }
+    if (process.env.OVERLAP_EVAL) console.log("   eval", w + "x" + h, await evalJS(process.env.OVERLAP_EVAL));
     let r = JSON.parse(await evalJS(PROBE)); runs++;
     // ponytail: a label gliding past a neighbour (.25s) is motion, not layout. An overlap counts only if it is still there
     // 450ms later (same pair, any size). Ceiling: a collision that flickers on and off faster than that is not caught.

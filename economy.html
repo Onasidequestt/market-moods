@@ -167,12 +167,11 @@
     .brand .tag { display: none; } .credit { font-size: 11.5px; } .credit img { height: 32px; } .credit span { max-width: none; }
     .mood, .cellcap { margin-top: 2px; } .mood .word, .cellcap .word { font-size: 30px; } .mood .key, .cellcap .key { display: none; } .mood .sub, .cellcap .sub { margin-top: 4px; } }
   @media (max-height: 600px) and (min-width: 700px) { .brand { flex: none; } .credit { order: 0; flex: 1 1 0; flex-basis: 0; padding: 0 8px; justify-content: center; } }   /* the credit beside the brand, not a row of its own */
-  /* 10-10 (Clark: a desktop window dragged very small, same as the front page): under ~460px tall the chrome alone fills the window and the
-     stage collapses. The group cards and the "Biggest mover" line go (each blob's own panel carries the numbers), then the mood word. */
-  @media (max-height: 460px) { .readouts { display: none; } .mood .sub { display: none; } }
-  @media (max-height: 340px) { .mood { height: 0; margin: 0; padding: 0; overflow: hidden; visibility: hidden; } }
-  @media (max-height: 420px) and (max-width: 640px) { .mood { height: 0; margin: 0; padding: 0; overflow: hidden; visibility: hidden; } .credit { display: none; } }
-  body.tiny:not(.incell) .tags { display: none; }
+  /* 10-10 r2 (Clark: no stacking; the critics: do not strip the page to get there): the stage keeps a floor of height, and a window shorter
+     than header + mood + stage + footer SCROLLS (wheel or drag anywhere) instead of losing names, mood, credit or cards. */
+  .chrome { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; } .chrome::-webkit-scrollbar { display: none; }
+  .chrome > * { flex-shrink: 0; }
+  .stagegap { flex: 1 1 0; min-height: 340px; pointer-events: none !important; } body.incell .stagegap { display: none; }
 </style>
 </head>
 <body>
@@ -210,6 +209,7 @@
     <div class="sub num" id="cellSub"></div>
     <div class="key"><span class="long">Each blob is one series &middot; colour = its move &middot; higher = up &middot; bigger = bigger move &middot; restless = choppy &middot; tap one for details</span><span class="short">one blob per series &middot; colour = move &middot; high = up &middot; tap for details</span></div>
   </div>
+  <div class="stagegap" id="stagegap" aria-hidden="true"></div>
   <footer id="foot">
     <div class="notice" id="notice"></div>
     <ul class="members num" id="members"></ul>
@@ -433,6 +433,12 @@
     if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
   }
   addEventListener("resize", resize); resize();
+
+  // 10-10 r2: a window shorter than the page scrolls the chrome; the lamp canvas sits behind it, so it hands wheel and drag over (the chrome's own children scroll natively)
+  { const ch = document.getElementById("chrome"); let ty = null;
+    addEventListener("wheel", e => { if (!e.target.closest || !e.target.closest(".chrome, .panel, dialog")) ch.scrollTop += e.deltaY; }, { passive: true });
+    addEventListener("touchstart", e => { ty = !e.target.closest(".chrome, .panel, dialog") ? e.touches[0].clientY : null; }, { passive: true });
+    addEventListener("touchmove", e => { if (ty != null) { const y = e.touches[0].clientY; ch.scrollTop += ty - y; ty = y; } }, { passive: true }); }
   const balls = new Float32Array(NB * 3), cols = new Float32Array(NB * 3);
   let stage = [0, innerHeight];   // the stage's top and bottom in client px, as travel() last measured them (labels stay inside)
   function travel(maxR) {
@@ -448,23 +454,23 @@
     const pad = 24 / innerHeight;   // r4: the edge lanes keep a 24px gutter, like the labels
     const lay = rows => { const per = Math.ceil(lanes.length / rows), laneW = (aspect - 2 * pad) / Math.max(1, per);
       // a short stage (phone on its side, 390px tall) shrinks the blobs to fit between the caption and the tiles (Clark 10-08)
-      const free = travel(0), baseR = Math.min(laneW * 0.34, 0.095, Math.max(0.02, (free[1] - free[0] - 0.06) / 3.5)), maxR = Math.min(baseR * 1.4, laneW * 0.36) * 1.25;   // the biggest blob that can be drawn (R is lane-capped below), not one that can't
+      const free = travel(0), baseR = Math.max(Math.min(laneW * 0.34, 0.095, Math.max(0.02, (free[1] - free[0] - 0.06) / 3.5)), Math.min(26 / innerHeight, laneW * 0.4)), maxR = Math.min(baseR * 1.4, laneW * 0.42) * 1.25;   // r2: a blob never draws under ~26px across   // the biggest blob that can be drawn (R is lane-capped below), not one that can't
       const band = travel(maxR); return { rows, per, laneW, baseR, maxR, band, t: rows === 2 ? (band[1] - band[0] - 2 * maxR - 0.05) / 2 : 0 }; };   // row gap: a blob over a blob plus a label
-    let Ly = aspect < 0.8 && lanes.length > 4 ? lay(2) : lay(1);
+    let Ly = (aspect < 0.8 || innerWidth < 560) && lanes.length > 4 ? lay(2) : lay(1);
     if (Ly.rows === 2 && Ly.t < 0.03) Ly = lay(1);   // a screen too short for two rows that can move: one row (never two rows stacked on one line)
     const { rows, per, laneW, baseR, band, t } = Ly;
     const bandOf = row => rows === 1 ? band : row === 0 ? [band[1] - t, band[1]] : [band[0], band[0] + t];
     let n = 0; balls.fill(0); cols.fill(0);
     lanes.forEach((L, i) => {
       const bd = bandOf(Math.floor(i / per)), cx = pad + (i % per + 0.5) * laneW, cy = bd[0] + L.h * (bd[1] - bd[0]), amp = 0.55 + 0.45 * Math.min(L.sp, 2.2);
-      let low = Infinity;
+      let low = Infinity; L.parts = [];
       L.drops.forEach((d, k) => {
         const core = k === 0, brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));
-        const R = Math.min(baseR * L.sz, laneW * 0.36), r = R * d.rr, room = Math.max(0, laneW * 0.5 - r * 1.4);   // capped to its lane: two big neighbours never fuse; 1.4 r clears the soft edge of a core+satellite body (1.25 r still touched at full size), so an edge lane never clips
+        const R = Math.min(baseR * L.sz, laneW * 0.42), r = R * d.rr, room = Math.max(0, laneW * 0.5 - r * 1.4);   // capped to its lane: two big neighbours never fuse; 1.4 r clears the soft edge of a core+satellite body (1.25 r still touched at full size), so an edge lane never clips
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? laneW * 0.06 : R * 0.45 * d.ax * drift) * amp, -room, room);
         const y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : R * 1.6 * d.ay * drift) * amp, bd[0], bd[1]);
-        balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r;
+        balls[n * 3] = x; balls[n * 3 + 1] = y; balls[n * 3 + 2] = r; L.parts.push([x, y, r]);
         if (core) { L.hx = x; L.hy = y; L.r = r; L.hitR = Math.max(r * 1.5, laneW * 0.45); }   // tap target: a small blob gets its lane's width
         low = Math.min(low, y - r * 1.1);
         cols[n * 3] = L.col[0]; cols[n * 3 + 1] = L.col[1]; cols[n * 3 + 2] = L.col[2];
@@ -673,7 +679,6 @@
       if (lv.textContent !== wl) { lv.textContent = k < 0 ? wl : ""; if (k >= 0) { const f = document.createElement("span"); f.className = "fq"; f.textContent = wl.slice(0, k + 3); lv.append(f, wl.slice(k + 3)); } }   // "monthly · " in its own span: a phone shows just the month
     });
     const tags = $("tags");
-    document.body.classList.toggle("tiny", stage[1] - stage[0] < 150 || (innerWidth < 640 && innerHeight < 400));   // 10-10: as index.html: a stage this short has no room for names; the blobs stay, the labels step aside
     const ws = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetWidth : 0), hs = lanes.map((L, i) => tags.children[i] ? tags.children[i].offsetHeight : 0);   // read every size first, then write
     const boxes = lanes.map((L, i) => { if (L.tagX == null || !tags.children[i]) return null;
       const half = ws[i] / 2 / innerWidth, g = 24 / innerWidth, x = Math.min(1 - half - g, Math.max(half + g, L.tagX)) * innerWidth;   // a 24px gutter: no label runs to the screen edge
@@ -752,6 +757,7 @@
   window.__em = { get inCell() { return inCell; }, groupXY(key) { const H = innerHeight, i = G.findIndex(g => g.key === key), L = lanes[i];
                     return L && L.hx != null ? { x: L.hx * H, y: H - L.hy * H } : null; },
                   memberXY(key) { const N = nodes.get(key); return N && N.dx != null ? { x: N.dx, y: N.dy } : null; },
+                  drops() { const H = innerHeight; return inCell ? [] : lanes.flatMap((L, i) => (L.parts || []).map(([x, y, r]) => ({ x: x * H, y: H - y * H, r: r * H, i }))); },   // overlap sweep: every drop of every blob (a label hangs under the lowest)
                   blobs() { const H = innerHeight; return inCell ? [] : lanes.map((L, i) => ({ L, i })).filter(({ L }) => L.hx != null && L.r).map(({ L, i }) => ({ x: L.hx * H, y: H - L.hy * H, r: L.r * H, own: true, i })); } };   // overlap sweep: every blob's core, client px; i = its label's index in #tags
 })();
 </script>

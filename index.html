@@ -248,17 +248,16 @@
   @media (max-height: 600px) { .timeline { margin: 19px 0 8px; } .days { margin-bottom: 4px; } }
   @media (max-height: 600px) and (max-width: 640px) {   /* part 2: a short phone (320x568) had a 61px stage for two rows; as on a short wide window the row itself is the door and the level waits in the cell */
     .idx .lvl { display: none; } .idx.hasdoor .look { display: none; } }
-  /* 10-10 (Clark: a desktop window dragged very small): under ~460px tall the chrome alone fills the window and the stage collapses
-     to nothing (two rows of blobs stacked on each other). The index cards go (the same numbers ride each blob's own details panel), so the stage keeps its height. */
-  @media (max-height: 460px) { .readouts { display: none; } .mood .sub { display: none; } }
-  @media (max-height: 340px) { .mood { height: 0; margin: 0; padding: 0; overflow: hidden; visibility: hidden; } }
-  @media (max-height: 420px) and (max-width: 640px) { .mood { height: 0; margin: 0; padding: 0; overflow: hidden; visibility: hidden; } .credit { display: none; } }
-  body.tiny .tags, body.tiny .fam { display: none; }
   @media (max-width: 360px) { .btn.day { padding: 0 8px; font-size: 11.5px; } }   /* five days on one row at 320px, not four and an orphan */
   @media (max-width: 360px) { .idx { padding: 5px; } .idx .name { gap: 4px; } }   /* part 2: one word ("Nasdaq") cannot wrap; at 320px it needs these 4px */
   @media (max-height: 600px) and (min-width: 641px) {   /* short and wide: each index row is ONE line (name · move · door), the stage gets the height; the level is in its details panel */
     .idx { grid-template-columns: minmax(0, 1fr) auto auto; } .idx .lvl, .idx .chop { display: none; } .idx .look { grid-column: 3; grid-row: 1; }
     .idx .long { display: none; } .idx .short { display: inline; } .idx.hasdoor .look { display: none; } }   /* short names; the row itself is the door (same canOpen gate), so the name keeps its room */
+  /* 10-10 r2 (Clark: no stacking; the critics: do not strip the page to get there): the stage keeps a floor of height, and a window shorter
+     than header + mood + stage + footer SCROLLS (wheel or drag anywhere) instead of losing names, mood, credit or cards. */
+  .chrome { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; } .chrome::-webkit-scrollbar { display: none; }
+  .chrome > * { flex-shrink: 0; }
+  .stagegap { flex: 1 1 0; min-height: 340px; pointer-events: none !important; } body.incell .stagegap { display: none; }
 </style>
 </head>
 <body>
@@ -303,6 +302,7 @@
     <div class="key"><span class="long" id="cellKeyLong"></span><span class="short" id="cellKeyShort"></span></div>
   </div>
 
+  <div class="stagegap" id="stagegap" aria-hidden="true"></div>
   <footer>
     <div class="notice" id="notice"></div>
     <div class="cellctl" id="cellctl">
@@ -741,22 +741,22 @@
   }
 
   function draw() {
-    const W = canvas.width, H = canvas.height, aspect = W / H;
+    const W = canvas.width, H = canvas.height, aspect = W / H, phoneish = aspect < 0.8 || innerWidth < 560;   // r2: a narrow window of any height lays out as the phone does (a 92px caption gutter left 28px economy lanes at 320 wide)
     // Stocks ride the upper row and the economy the lower one, each family spread over the whole width, each with its own up/down band.
     const stacked = econ.length > 0;   // two rows at EVERY width (10-01 ask: two rows, not one long one)
     const EW = 0.6, GAP = econ.length && !stacked ? 0.5 : 0;
     // wide: the STOCKS / ECONOMY captions own a left gutter, so lane 0's wax never drifts over them (Clark 10-08 overlap sweep)
-    const gut = stacked && aspect >= 0.8 && fam.w ? (fam.w + 32) / innerHeight : 0;
+    const gut = stacked && !phoneish && fam.w ? (fam.w + 32) / innerHeight : 0;
     const laneW = stacked ? (aspect - gut) / 4 : aspect / (4 + GAP + EW * econ.length);
     const wE = stacked ? (aspect - gut) / Math.max(1, econ.length) : laneW * EW, x0E = stacked ? gut : (4 + GAP) * laneW;
     // two rows must fit the free height between the mood block and the timeline: on a wide screen the old 0.095
     // radius filled it with the stocks alone, so cap the radius by that height (phones stay lane-limited).
-    const free = travel(0), baseR = Math.max(Math.min(laneW * 0.34, 0.095, (free[1] - free[0]) * 0.13), 5 / innerHeight) * pulseNow;   // the heartbeat: exactly 1 when pulseAmp is 0
+    const free = travel(0), baseR = Math.max(Math.min(laneW * 0.34, 0.095, (free[1] - free[0]) * 0.13), Math.min(28.5 / innerHeight, laneW * 0.4)) * pulseNow;   // r2: a stock never draws under ~28px   // the heartbeat: exactly 1 when pulseAmp is 0
     const band = travel(baseR * 1.4 * 1.25);   // biggest blob (size 1.4) with its droplets bunched: body edge at (Σr⁴)^¼ ≈ 1.23 R
     const span = band[1] - band[0];
     const bandE = stacked ? [band[0], band[0] + span * 0.22] : band;
     // the economy row's shelf: from under its lowest possible label to just over its tallest possible wax (fixed per layout, not per frame)
-    const eR = stacked && aspect < 0.8 ? Math.min(22 / innerHeight, wE * 0.48) : Math.min(baseR * 0.6, wE * 0.36) * 1.23;   // 10-10 (Clark: stocks ~2x the economy blobs): an economy blob is 0.5-0.6 baseR, a stock 1.0-1.4
+    const eR = stacked && phoneish ? Math.min(22 / innerHeight, wE * 0.48) : Math.min(baseR * 0.77, wE * 0.36) * 1.23;   // 10-10 (Clark: stocks ~2x the economy blobs): an economy blob is 0.5-0.6 baseR, a stock 1.0-1.4
     fam.shelf = stacked ? [bandE[0] - eR - 26 / innerHeight, bandE[1] + eR + 10 / innerHeight] : null;
     // part 2 (Clark 10-08): a stock label hangs (h + 4)px under its wax and must stay over the shelf, so the stocks' floor
     // leaves that strip plus the biggest core's reach under its centre. Ponytail: worst-case core (size 1.4); a satellite
@@ -765,7 +765,7 @@
     // ...but the stocks keep at least 30% of the band to move in (higher = up must still show); on a short stage the strip gives way
     const bandI = stacked ? [Math.min(band[1] - span * 0.3, Math.max(band[0] + span * 0.55, fam.shelf[1] + labY + baseR * 1.4 * 1.1)), band[1]] : band;
     fam.wEpx = wE * innerHeight;   // one economy lane, CSS px: ui() caps each economy label at it
-    fam.stacked = stacked && aspect < 0.8; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
+    fam.stacked = stacked && phoneish; fam.iX = 2 * laneW / aspect; fam.eX = (x0E + econ.length * wE / 2) / aspect;
     const top = [0, 0];   // each family's highest wax this frame: its caption rides just above it
     // 10-09 (Clark: "smashes together"): a stock drop never reaches the economy row. The row's tallest wax ends 10px under the
     // shelf line, so a drop's body (1.15 r, bunched) stops 4px under it: a 6px gap at worst. A lane too big to fit between that and
@@ -773,6 +773,9 @@
     // (smallest phones, a phone on its side: the names sit on the wax there).
     const yMin = stacked && fam.shelf ? fam.shelf[1] - 4 / innerHeight : -Infinity;
     fam.squeezed = false;
+    // r2 (one shared scale): an economy blob is ~0.5 of the stocks' mean drawn radius, so the 2x holds at every window size (the stocks shrink to
+    // fit a short stage; the economy shrinks with them). Phones keep the 22px thumb target (economy-check) instead.
+    const rcap0 = (free[1] - yMin) / 2.4, rMean = lanes.reduce((a, L) => { const t = (L.sz - 0.8) / 0.6, Rs = baseR * (1 + 0.4 * t); return a + (Rs > rcap0 && rcap0 >= 0.5 * Rs ? rcap0 : Rs); }, 0) / Math.max(1, lanes.length);
     let n = 0;
     lanes.concat(econ).forEach((L, i) => {
       const isE = i >= 4, w = isE ? wE : laneW, bd = isE ? bandE : bandI;
@@ -794,7 +797,7 @@
         const brk = Math.min(1, Math.max(0.05, (L.sp - 0.6) / 1.0));
         const drift = core ? 0 : 0.7 + 1.6 * brk * Math.max(0, Math.sin((L.ph - i * 10) * 0.17 + d.px * 1.7));   // break-away clock shared: equal chop, equal spread
         if (isE && stacked && !core) { balls[n * 3 + 2] = 0; n++; return; }   // phone: a small economy blob stays one clean drop
-        const R = isE ? Math.max(stacked && aspect < 0.8 ? Math.min(22 / innerHeight, w * 0.48) : 0, Math.min(baseR * (0.5 + 0.1 * szT), w * (stacked ? 0.36 : 0.3))) : R2;   // phone keeps its 22px thumb target (economy-check), so there a stock is ~1.5-2x, not 2x   // phone: a 44px blob, a thumb's target (the shader keeps neighbours from bridging)   // an economy blob never outgrows its narrow lane; offsets scale with the blob
+        const R = isE ? Math.max(stacked && phoneish ? Math.min(22 / innerHeight, w * 0.48) : 0, Math.min(Math.max(rMean * (0.46 + 0.08 * szT), 16.5 / innerHeight), w * (stacked ? 0.42 : 0.3))) : R2;   // phone keeps its 22px thumb target (economy-check), so there a stock is ~1.5-2x, not 2x   // phone: a 44px blob, a thumb's target (the shader keeps neighbours from bridging)   // an economy blob never outgrows its narrow lane; offsets scale with the blob
         const Rd = isE ? R : R2, r = Rd * d.rr, room = Math.max(0, w * 0.5 - r);   // wax stays in its own lane and band
         const x = cx + clampN(Math.sin(L.ph * d.wx * 2 + d.px) * (core ? (isE && fam.stacked ? 0 : w * 0.06) : Rd * 0.45 * d.ax * drift) * amp, -room, room);   // phone: a 44px economy blob in a 49px lane holds its x
         let y = clampN(cy + Math.sin(L.ph * d.wy * 2 + d.py) * (core ? 0.02 : Rd * 1.6 * d.ay * drift) * amp, bd[0], hi);
@@ -863,7 +866,6 @@
       ix.el.querySelector(".chop").textContent = L.chop == null ? "just opened" : Mood.chopWord(L.chop) + " last hour";
     });
     const tags = $("tags");
-    document.body.classList.toggle("tiny", stage[1] - stage[0] < 150 || (innerWidth < 640 && innerHeight < 400));   // 10-10: a stage this short has no room for names: the blobs stay (and keep apart), the labels and captions step aside
     if (tags.children.length !== data.indexes.length + econ.length) {
       tags.textContent = "";
       data.indexes.forEach(ix => { const s = document.createElement("span"); s.textContent = SHORT[ix.key] || ix.name;
@@ -883,7 +885,7 @@
       const laneE = i >= 4 && fam.stacked;   // phone: an economy label is already confined to its 1/8 lane (max-width); no gutter shove, no push below a neighbour
       const g = laneE ? 0 : (i >= 4 && fam.wEpx ? Math.max(6, Math.min(24, Math.max(0, (fam.wEpx - w) / 2))) : 24) / W_, x = clampN(L.tagX, half + g, 1 - half - g) * W_;   // a 24px gutter at both edges, but an economy label never leaves its own lane for it
       if (i < 4) { fam.labH = h; s.classList.toggle("onwax", !!L.onWax); }   // draw() keeps a strip this tall between the two rows; a label with no room under its blob wears a backing
-      return { s, l: x - w / 2, r: x + w / 2, h, b: L.tagY * H_ - h - 4, x, fixed: i < 4 }; });
+      return { s, l: x - w / 2, r: x + w / 2, h, b: L.tagY * H_ - h - 4, x, fixed: i < 4 || laneE }; });
     Mood.dodge(boxes, H_ - stage[1] + 2, H_ - stage[0]);   // never under the footer's top, never into the mood caption
     for (const B of boxes) if (B) { B.s.style.left = (B.x / W_ * 100).toFixed(2) + "%"; B.s.style.bottom = B.b.toFixed(1) + "px"; B.s.style.visibility = "visible"; }
     econ.forEach((L, k) => { const B = boxes[4 + k]; if (B) B.s.style.color = hex(Mood.labelTint(L.col)); });   // r4: an economy label wears its blob's colour (lightened), so a label's row reads at a glance
@@ -1386,6 +1388,12 @@
     else if (!Panel.hadOpen) document.body.classList.toggle("bare");   // a click that only closed the panel does not also hide the chrome
   });
   $("chrome").addEventListener("click", e => { if (e.target === $("chrome") && !Panel.hadOpen) document.body.classList.toggle("bare"); });
+
+  // 10-10 r2: a window shorter than the page scrolls the chrome; the lamp canvas sits behind it, so it hands wheel and drag over (the chrome's own children scroll natively)
+  { const ch = document.getElementById("chrome"); let ty = null;
+    addEventListener("wheel", e => { if (!e.target.closest || !e.target.closest(".chrome, .panel, dialog")) ch.scrollTop += e.deltaY; }, { passive: true });
+    addEventListener("touchstart", e => { ty = !e.target.closest(".chrome, .panel, dialog") ? e.touches[0].clientY : null; }, { passive: true });
+    addEventListener("touchmove", e => { if (ty != null) { const y = e.touches[0].clientY; ch.scrollTop += ty - y; ty = y; } }, { passive: true }); }
   addEventListener("keydown", e => {
     if (e.target.closest && e.target.closest("dialog")) return;
     if (e.key === "Escape" && inCell) closeCell();
