@@ -99,6 +99,11 @@ for (const page of PAGES) {
   await sleep(1500);   // data in, first frames drawn
   for (const [w, h] of SIZES) {
     await size(w, h); await sleep(700);   // the lamp re-measures on its next frames; labels glide .25s
+    // 10-10: software WebGL at 1920 wide can take seconds per frame, so 700ms measured a layout still on the old size. Wait until
+    // the page's own layout read-outs (stage edges, shelf, label geometry) stop changing, 6s at most.
+    { const sig = () => evalJS("((a)=>(a[0].dataset.edges||'')+'|'+(a[1].dataset.shelf||'')+'|'+(a[1].dataset.geo||'')+'|'+innerWidth+'x'+innerHeight)([document.querySelector('canvas')||{dataset:{}},document.querySelector('.tags')||{dataset:{}}])");
+      if (w >= 1600) await sleep(3000);   // software WebGL: frames at this width take seconds, so equal reads can mean a stalled loop, not a settled layout
+      let prev = await sig(); for (let k = 0; k < 20; k++) { await sleep(300); const cur = await sig(); if (cur === prev) break; prev = cur; } }
     let r = JSON.parse(await evalJS(PROBE)); runs++;
     // ponytail: a label gliding past a neighbour (.25s) is motion, not layout. An overlap counts only if it is still there
     // 450ms later (same pair, any size). Ceiling: a collision that flickers on and off faster than that is not caught.

@@ -90,7 +90,8 @@
   .tags span.door { pointer-events: auto; cursor: pointer; }
   .tags span.onwax { background: rgba(10, 6, 16, .78); padding: 1px 6px; border-radius: 7px; text-shadow: none; }   /* part 2: no room under its blob (a short stage), so it sits on its own wax on a dark pill, not as a strike-through */
   .tags span.econ { font-size: 10px; white-space: normal; width: max-content; max-width: var(--laneE, none); text-align: center; line-height: 1.15; }   /* part 2: a label wider than its lane wraps inside it (CENTRAL BANKS was shoved onto Shipping at 800-840px); max-content: no early wrap at the right edge */
-  @media (max-width: 480px) { .tags span.econ { font-size: 9px; letter-spacing: .03em; } }
+  @media (max-width: 560px) { .tags span.econ { letter-spacing: 0; } }   /* 10-10: CENTRAL BANKS touched SHIPPING by 2px at 540 */
+  @media (max-width: 480px) { .tags span.econ { font-size: 9px; letter-spacing: 0; } }
   @media (max-width: 360px) { .tags span.onwax:not(.econ) { font-size: 9.5px; letter-spacing: .03em; padding: 1px 4px; } }   /* 10-09: a stock pill fits its 80px lane at 320 (RUSSELL leaned under Nasdaq's wax) */
   .fam { position: fixed; inset: 0; pointer-events: none; }
   .fam span { position: absolute; transform: translate(-50%, 0); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink); opacity: .9; white-space: nowrap;
