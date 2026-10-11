@@ -16,6 +16,8 @@ if (!BASE || !BIN) { console.log("✘ overlap: usage: overlap_sweep.mjs <base ur
 const PAGES = pagesArg.length ? pagesArg : ["index.html", "economy.html"];
 const SIZES = [];
 for (let w = 1920; w >= 320; w -= 40) SIZES.push([w, 800]);   // shrinking, as a hand drags the window edge in
+if (process.env.OVERLAP_GRID) { SIZES.length = 0;   // 10-10 (Clark: "window scaled down very small"): every width x every height, down to a postage stamp
+  for (const w of (process.env.OVERLAP_WS || "1920,1860,1800,1740,1680,1620,1560,1500,1440,1380,1320,1260,1200,1140,1080,1020,960,900,840,780,720,660,600,540,480,420,360,320").split(",").map(Number)) for (const h of (process.env.OVERLAP_HS || "900,700,560,440,360,300").split(",").map(Number)) SIZES.push([w, h]); }
 SIZES.push([1440, 800], [1280, 720], [1366, 640], [1024, 600], [390, 844], [390, 664], [320, 568], [844, 390]);
 
 // runs IN the page: same rules as the header comment
@@ -88,7 +90,7 @@ ws.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id && pend.has(m.id)
 await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; pend.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })); });
 const evalJS = async expr => (await send("Runtime.evaluate", { expression: expr, returnByValue: true })).result.value;
-const size = (w, h) => send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 700 });
+const size = (w, h) => send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: process.env.OVERLAP_GRID ? false : w < 700 });
 
 let total = 0, runs = 0;
 for (const page of PAGES) {
@@ -102,9 +104,11 @@ for (const page of PAGES) {
     // 450ms later (same pair, any size). Ceiling: a collision that flickers on and off faster than that is not caught.
     if (r.bad.length) { await sleep(450); const again = new Set(JSON.parse(await evalJS(PROBE)).bad.map(k => k.replace(/ ?\(?[\d,x ]+\)?$|at [\d,]+( and [\d,]+)?|r\d+/g, "")));
       r.bad = r.bad.filter(k => again.has(k.replace(/ ?\(?[\d,x ]+\)?$|at [\d,]+( and [\d,]+)?|r\d+/g, ""))); }
+    if (process.env.OVERLAP_DEBUG) console.log(`· ${page} ${w}x${h} stage ${await evalJS("(document.getElementById('lamp')||{dataset:{}}).dataset.edges")} shelf ${await evalJS("(document.querySelector('.tags')||{dataset:{}}).dataset.shelf")} blobs ${r.blobs}`);
     if (process.env.OVERLAP_SHOTS) writeFileSync(join(process.env.OVERLAP_SHOTS, `${page.replace(".html", "")}_${w}x${h}.png`),
       Buffer.from((await send("Page.captureScreenshot", { format: "png" })).data, "base64"));   // the frame the probe measured, for eyes
     if (!r.n || !r.blobs) { console.log(`✘ overlap ${page} ${w}x${h}: probe saw ${r.n} boxes, ${r.blobs} blobs (cannot verify)`); total++; continue; }
+    if (r.bad.length && process.env.OVERLAP_DEBUG) console.log("   rects", await evalJS("JSON.stringify([...document.querySelectorAll('.tags span, .days .btn')].map(e=>[e.textContent.trim().slice(0,8),...Object.values(e.getBoundingClientRect().toJSON()).slice(0,4).map(Math.round)]))"));
     for (const b of r.bad) { console.log(`✘ overlap ${page} ${w}x${h}: ${b}`); total++; }
   }
 }
