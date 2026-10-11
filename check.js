@@ -263,7 +263,11 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
         const age = (today - Date.parse(m.asof + "T12:00:00Z") / 1000) / day;
         // quarterly is dated by its quarter's first day and lands ~3 months after it ends; yearly (IMF WEO) is the last
         // full year, so 2025-01-01 stays the newest until the April 2027 WEO: ~820 days at worst
-        const limit = { "5min": 10, daily: 10, weekly: 21, monthly: 100, quarterly: 300, yearly: 850 }[m.freq];
+        // ponytail: monthly 100 -> 125 (10-10). A monthly number is dated the 1st of its month; Case-Shiller (homes) lands the last Tuesday
+        // of the month after next, so July (2026-07-01) stays the newest until 2026-10-27 = 118 days old; BTS/AAR freight (rail, TSI, truck
+        // tonnage) and IMF gold USA sit on July the same way. FRED's own newest row for all of them was 2026-07-01 on 10-10, so the
+        // source was current, the limit too tight. Ceiling: a series stalled for under 125 days is not caught. Upgrade: a per-series lag.
+        const limit = { "5min": 10, daily: 10, weekly: 21, monthly: 125, quarterly: 300, yearly: 850 }[m.freq];
         // staleness is only a failure where the economy file is what is being refreshed (economy.yml passes
         // --fresh); in the index and companies workflows an old economy file must not block stock data
         if (FRESH) ok(age >= -1 && age <= limit, `${m.key}: ${m.freq} number dated ${m.asof} is ${age.toFixed(0)} days old, limit ${limit}`);
