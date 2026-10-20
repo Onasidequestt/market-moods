@@ -293,7 +293,7 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
       boeAssets: [500, 1500], pbocAssets: [30000, 90000], snbAssets: [500, 1500],
       // Clark 10-19 bonds + crypto: futures quote in % of face, yields and spreads in %, coins in $ (a satoshi or cents slip is 1e2..1e8 off)
       zt: [90, 115], zn: [90, 140], zb: [80, 180], t2y: [0, 10], tips10: [-2, 6], igSpread: [0.3, 5], hySpread: [1.5, 25],
-      de10: [-1, 8], uk10: [0, 10], jp10: [-1, 6], btc: [5000, 500000], eth: [200, 30000], doge: [0.005, 2] };
+      de10: [-1, 8], uk10: [0, 10], jp10: [-1, 6], btc: [5000, 500000], eth: [200, 30000], sol: [10, 2000], xrp: [0.2, 20], bnb: [100, 5000], doge: [0.005, 2] };
     for (const [key, [lo, hi]] of Object.entries(band)) {
       const m = all.find(x => x.key === key);
       ok(m && m.last >= lo && m.last <= hi, `economy: ${key} ${m && m.last} sits in its real-world band ${lo}..${hi}`);
