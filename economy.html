@@ -74,7 +74,7 @@
   .tags { position: fixed; inset: 0; pointer-events: none; }
   .tags span { position: absolute; transform: translate(-50%, 0); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink-2); white-space: nowrap; visibility: hidden; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); pointer-events: auto; cursor: pointer; }
-  @media (max-width: 480px) { .tags span { font-size: 10px; letter-spacing: .03em; } }   /* phone: two rows of four lanes (~97px each) */
+  @media (max-width: 480px) { .tags span { font-size: 10px; letter-spacing: .03em; } }   /* phone: two rows of five lanes (~68px each, 10-19) */
   /* PANEL-CSS: the one details panel (identical block in index.html and economy.html; panel-check.sh compares them) */
   .panel { position: fixed; z-index: 6; top: 0; right: 0; bottom: 0; width: 360px; max-width: 100%; overflow-y: auto; outline: none;
     background: rgba(18, 11, 24, .94); border-left: 1px solid var(--line); box-shadow: -10px 0 40px rgba(0, 0, 0, .45);
@@ -116,7 +116,7 @@
   footer { position: relative; flex: none; margin-top: auto; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
   .notice { text-align: center; color: var(--ink-2); font-size: 14px; display: none; margin: 0 0 10px; }
   .notice.on { display: block; }
-  .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }   /* r4: 8 groups = two full rows, no orphan */
+  .readouts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }   /* 10-19: 10 groups (bonds + crypto) = two full rows of five, no orphan */
   .card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: center; background: var(--glass); border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; cursor: pointer;   /* mm44: thin rows */
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); min-width: 0; color: inherit; font: inherit; text-align: left; }
   .card .name { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -388,7 +388,7 @@
   // ---------- lamp ----------
   const canvas = $("lamp");
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, alpha: false });
-  const MAXG = 8, NB = MAXG * DROPS;   // shader slots: up to 8 groups (7 today); a group past the slots would be silently undrawn
+  const MAXG = 10, NB = MAXG * DROPS;   // shader slots: up to 10 groups (10 today, 10-19); a group past the slots would be silently undrawn
   let uRes, uBalls, uCols, uBgTop, uBgBot, uHeat;
   if (gl) {
     const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -450,7 +450,7 @@
   }
   function draw() {
     const W = canvas.width, H = canvas.height, aspect = W / H;
-    // phone: two rows of four (r3: eight lanes of 49px left ~35px blobs, a clipped edge blob and the stage half empty)
+    // phone: two rows (five lanes each since 10-19; r3: eight lanes of 49px left ~35px blobs, a clipped edge blob and the stage half empty)
     const pad = 24 / innerHeight;   // r4: the edge lanes keep a 24px gutter, like the labels
     const lay = rows => { const per = Math.ceil(lanes.length / rows), laneW = (aspect - 2 * pad) / Math.max(1, per);
       // a short stage (phone on its side, 390px tall) shrinks the blobs to fit between the caption and the tiles (Clark 10-08)

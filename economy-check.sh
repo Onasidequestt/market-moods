@@ -128,21 +128,22 @@ for (const SIZE of ["390,844", "1440,900"]) {
     const note = dec(attr(H, /<div class="notice on" id="notice">([^<]*)</) || "");   // the on-page note, not the help dialog's copy
     for (const x of e.missing.filter(z => z.group === K)) ok(note.includes(x.name) && note.includes(x.why), `${tag} ${K}: not-live ${x.name} is named on the page with its reason`);
   }
-  // mm19: the front page carries every group as a blob, its move recounted here, and a label that opens it
+  // mm19: the front page carries the first eight groups as blobs (index.html ECON_MAX; 10-19 bonds + crypto are groups 9-10,
+  // economy page only), each move recounted here, and a label that opens it
   const F = dom("front_" + SIZE), fe = attr(F, /data-econ="([^"]*)"/) || "";
-  const want = e.groups.map(g => [g.key, groupPct(g)]).filter(([, p]) => p != null);
+  const want = e.groups.map(g => [g.key, groupPct(g)]).filter(([, p]) => p != null).slice(0, 8), FG = want.map(([k]) => e.groups.find(g => g.key === k));
   ok(fe === want.map(([k, p]) => k + ":" + p.toFixed(2)).join(","), `${tag} front: one economy blob per group, moves recounted (${fe})`);
   const doors = [...F.matchAll(/<span class="door econ" title="Look inside ([^"]+)"/g)].map(x => dec(x[1]));
-  ok(doors.join() === e.groups.map(g => g.name).join(), `${tag} front: a label per group that opens it (${doors.join(" | ")})`);
+  ok(doors.join() === FG.map(g => g.name).join(), `${tag} front: a label per group that opens it (${doors.join(" | ")})`);
   // 10-01 ask: two rows at every width, the economy BELOW the stocks, not one long row. Label heights are the
   // painted ones (style bottom:px): every economy label sits under every index label.
   const sp = (/<div class="tags"[^>]*>([\s\S]*?)<\/div>/.exec(F) || [, ""])[1].match(/<span[^>]*>/g) || [];
   const bOf = x => parseFloat((/bottom: ([\d.]+)px/.exec(x) || [, NaN])[1]);
   const idxB = sp.filter(x => !/door econ/.test(x)).map(bOf), ecoB = sp.filter(x => /door econ/.test(x)).map(bOf);
-  ok(ecoB.length === e.groups.length && idxB.length >= 3 && Math.max(...ecoB) < Math.min(...idxB), `${tag} front: two rows, every economy label under every index label (economy tops ${Math.max(...ecoB)}px, index bottoms ${Math.min(...idxB)}px)`);
+  ok(ecoB.length === FG.length && idxB.length >= 3 && Math.max(...ecoB) < Math.min(...idxB), `${tag} front: two rows, every economy label under every index label (economy tops ${Math.max(...ecoB)}px, index bottoms ${Math.min(...idxB)}px)`);
   // r3 design asks, measured on the page's own geometry (tags data-geo: label l, r, top, bottom | blob bottom, radius | font px)
   const geo = JSON.parse(dec(attr(F, /data-geo="([^"]*)"/) || "[]")).filter(Boolean);
-  ok(geo.length === e.groups.length, `${tag} front: geometry for every economy label (${geo.length})`);
+  ok(geo.length === FG.length, `${tag} front: geometry for every economy label (${geo.length})`);
   for (const [l, r, top, , blobBot] of geo) ok(top <= blobBot && top >= blobBot - 16, `${tag} front: an economy label hangs right under ITS blob (label top ${top}px, blob bottom ${blobBot}px)`);
   for (let k = 1; k < geo.length; k++) ok(geo[k][0] >= geo[k - 1][1] || geo[k][3] >= geo[k - 1][2] || geo[k][2] <= geo[k - 1][3], `${tag} front: economy labels ${k - 1}/${k} do not overlap`);
   if (tag === "phone") ok(geo.every(g => g[5] >= 21.5 && g[6] >= 9), `${tag} front: economy blobs radius >= 22px, labels >= 9px (${geo.map(g => g[5] + "/" + g[6]).join(" ")})`);

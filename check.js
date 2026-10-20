@@ -249,7 +249,7 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
   if (!fs.existsSync(ef)) console.log("… data/economy.json missing: the economy page shows its honest 'couldn't load' notice");
   else {
     const e = JSON.parse(fs.readFileSync(ef, "utf8")), today = Date.now() / 1000, day = 86400;
-    ok(e.groups.map(g => g.key).join() === "energy,metals,farm,rates,macro,debt,shipping,cbanks", "economy: the eight groups, in order: " + e.groups.map(g => g.key));
+    ok(e.groups.map(g => g.key).join() === "energy,metals,farm,rates,macro,debt,shipping,cbanks,bonds,crypto", "economy: the ten groups, in order (bonds + crypto after the front page's eight): " + e.groups.map(g => g.key));
     const seen = new Set(), all = [];
     for (const g of e.groups) {
       ok(g.members.length >= 3, `${g.key}: at least 3 members live (${g.members.length})`);
@@ -290,10 +290,13 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
     // off by 1000x, so pin each to its real-world band (gold: US ~8,133 t, Germany ~3,350 t, China ~2,300 t; COFER ~$13 tn, USD ~57%; Fed/ECB in $/€ trillion, BoJ ¥ trillion)
     const band = { goldUSA: [7500, 8800], goldDEU: [3000, 3700], goldITA: [2200, 2700], goldFRA: [2200, 2700], goldCHN: [1800, 3500], goldIND: [600, 1200],
       goldPOL: [300, 1200], goldTUR: [300, 1300], fxReserves: [8, 20], usdShare: [40, 75], fedAssets: [5, 9], ecbAssets: [4, 9], bojAssets: [450, 950],
-      boeAssets: [500, 1500], pbocAssets: [30000, 90000], snbAssets: [500, 1500] };
+      boeAssets: [500, 1500], pbocAssets: [30000, 90000], snbAssets: [500, 1500],
+      // Clark 10-19 bonds + crypto: futures quote in % of face, yields and spreads in %, coins in $ (a satoshi or cents slip is 1e2..1e8 off)
+      zt: [90, 115], zn: [90, 140], zb: [80, 180], t2y: [0, 10], tips10: [-2, 6], igSpread: [0.3, 5], hySpread: [1.5, 25],
+      de10: [-1, 8], uk10: [0, 10], jp10: [-1, 6], btc: [5000, 500000], eth: [200, 30000], doge: [0.005, 2] };
     for (const [key, [lo, hi]] of Object.entries(band)) {
       const m = all.find(x => x.key === key);
-      ok(m && m.last >= lo && m.last <= hi, `central banks: ${key} ${m && m.last} sits in its real-world band ${lo}..${hi}`);
+      ok(m && m.last >= lo && m.last <= hi, `economy: ${key} ${m && m.last} sits in its real-world band ${lo}..${hi}`);
     }
     for (const c of ["CH", "CA", "MX", "JP", "KR", "UK", "GE", "FR"]) {
       const m = all.find(x => x.key === "trade" + c);

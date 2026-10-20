@@ -417,6 +417,26 @@ ECON = [
         ("goldTUR", "Gold held: Turkey", "m", "irfcl:TUR", "pct", "tonnes", "monthly"),
         ("fxReserves", "World FX reserves (all central banks)", "m", "cofer:CI_T:NV_USD", "pct", "$ trillion", "quarterly"),
         ("usdShare", "US dollar share of FX reserves", "m", "cofer:CI_USD:SHRO_PT", "pct", "% of allocated reserves", "quarterly")]),
+    # Clark 10-19: bond-market categories and crypto, on the economy page. Groups 9-10: the front page's
+    # economy row keeps the first eight (index.html ECON_MAX); the yields themselves stay in Rates above.
+    ("bonds", "Bond market", "Bonds", [
+        ("zt", "2-year Treasury futures", "y", "ZT=F", "pct", "price, % of face", "5min"),
+        ("zn", "10-year Treasury futures", "y", "ZN=F", "pct", "price, % of face", "5min"),
+        ("zb", "30-year Treasury bond futures", "y", "ZB=F", "pct", "price, % of face", "5min"),
+        ("t2y", "2-year note yield", "f", "DGS2", "bp", "% yield", "daily"),
+        ("tips10", "10-year real yield (TIPS)", "f", "DFII10", "bp", "% yield after inflation", "daily"),
+        ("igSpread", "Corporate bond spread (investment grade)", "f", "BAMLC0A0CM", "bp", "% over Treasuries", "daily"),
+        ("hySpread", "Junk bond spread (high yield)", "f", "BAMLH0A0HYM2", "bp", "% over Treasuries", "daily"),
+        ("de10", "Germany 10-year yield", "f", "IRLTLT01DEM156N", "bp", "% yield (monthly average)", "monthly"),
+        ("uk10", "UK 10-year yield", "f", "IRLTLT01GBM156N", "bp", "% yield (monthly average)", "monthly"),
+        ("jp10", "Japan 10-year yield", "f", "IRLTLT01JPM156N", "bp", "% yield (monthly average)", "monthly")]),
+    ("crypto", "Crypto", "Crypto", [
+        ("btc", "Bitcoin", "y", "BTC-USD", "pct", "$ / coin", "5min"),
+        ("eth", "Ether", "y", "ETH-USD", "pct", "$ / coin", "5min"),
+        ("sol", "Solana", "y", "SOL-USD", "pct", "$ / coin", "5min"),
+        ("xrp", "XRP", "y", "XRP-USD", "pct", "$ / coin", "5min"),
+        ("bnb", "BNB", "y", "BNB-USD", "pct", "$ / coin", "5min"),
+        ("doge", "Dogecoin", "y", "DOGE-USD", "pct", "$ / coin", "5min")]),
 ]
 # a feed's raw unit divided into the unit the page names (FRED: WALCL/ECBASSETSW in millions, JPNASSETS in 100 millions)
 ECON_SCALE = {"fedAssets": 1e6, "ecbAssets": 1e6, "bojAssets": 1e4}
@@ -426,7 +446,8 @@ ECON_SHORT = {"mortgage": "Mortgage", "cpi": "CPI", "unemp": "Unemp.", "payrolls
               "t10y": "10-year", "t30y": "30-year", "natgas": "Nat. gas", "heatoil": "Heating oil", "steel": "Steel",
               "aluminium": "Aluminium", "brent": "Brent", "wti": "WTI", "credit": "Credit", "cards": "Cards", "fedDebt": "Fed. debt",
               "m1": "M1", "railCars": "Rail cars", "railBox": "Intermodal", "tsi": "Freight idx", "truckTons": "Tonnage", "imports": "Import prices", "exports": "Export prices", "tradeCH": "China trade", "tradeCA": "Canada trade", "tradeMX": "Mexico trade", "tradeJP": "Japan trade", "tradeKR": "Korea trade", "tradeUK": "UK trade", "tradeGE": "Germany trade", "tradeFR": "France trade", "goldUSA": "US gold", "goldDEU": "German gold", "goldITA": "Italian gold", "goldFRA": "French gold", "goldCHN": "China gold", "goldIND": "India gold", "goldPOL": "Polish gold", "goldTUR": "Turkish gold", "boeAssets": "BoE", "pbocAssets": "PBoC", "snbAssets": "SNB", "fxReserves": "FX reserves", "usdShare": "USD share",  "fedAssets": "Fed", "ecbAssets": "ECB", "bojAssets": "BoJ", "worldDebt": "World debt", "trade": "Trade", "cassShip": "Shipments", "cassSpend": "Freight $",
-              "trucking": "Trucking", "feeder": "Feeder", "oj": "OJ", "cattle": "Cattle", "rice": "Rice", "hogs": "Hogs"}     # a blob's label; the full name rides in the tooltip
+              "trucking": "Trucking", "zt": "2-yr futures", "zn": "10-yr futures", "zb": "30-yr futures", "t2y": "2-year", "tips10": "Real 10-yr",
+              "igSpread": "IG spread", "hySpread": "Junk spread", "de10": "German 10-yr", "uk10": "UK 10-yr", "jp10": "Japan 10-yr", "btc": "Bitcoin", "eth": "Ether", "doge": "Doge", "feeder": "Feeder", "oj": "OJ", "cattle": "Cattle", "rice": "Rice", "hogs": "Hogs"}     # a blob's label; the full name rides in the tooltip
 # things the client asked for that no free keyless source carries: listed on the page, never faked
 ECON_MISSING = [("metals", "Cobalt", "no free public price series (LME and Fastmarkets are paid; FRED has none)"),
                 ("energy", "Propane", "Yahoo lists Mont Belvieu propane (B0=F) but it printed once in 5 days: too thin for a move"),
@@ -472,9 +493,13 @@ def econ_yahoo(spec, daily, intraday):
         if not before: raise ValueError(f"{sym}: daily closes frozen at {prev} and no earlier print")
         prev = before[-1]
     return {"key": key, "name": name, "sym": sym, "kind": kind, "unit": unit, "freq": "5min" if live else "daily",
-            "src": "Yahoo Finance", "prev": round(prev, 4), "last": round(last, 4), "last_time": lt,
+            "src": "Yahoo Finance", "prev": _px(prev), "last": _px(last), "last_time": lt,
             "asof": datetime.fromtimestamp(lt, ET).date().isoformat(),
-            "bars": [[t, round(c, 4)] for t, c in i[-24:]] if live else []}
+            "bars": [[t, _px(c)] for t, c in i[-24:]] if live else []}
+
+def _px(v):
+    """4 decimals, 6 under $1: Dogecoin at $0.0797 rounded to 4 moves in 0.13% steps."""
+    return round(v, 4 if abs(v) >= 1 else 6)
 
 def econ_fred(spec, rows, src=None):
     """Pure. A slow member: its latest reading vs the one before, dated by the reading's own date."""
@@ -483,6 +508,9 @@ def econ_fred(spec, rows, src=None):
     (pd_, prev), (ld, last) = rows[-2], rows[-1]
     m = {"key": key, "name": name, "sym": sid, "kind": kind, "unit": unit, "freq": freq,
          "src": src or (f"IMF World Economic Outlook ({sid}, estimate)" if spec[2] == "i" else f"FRED ({sid})"), "prev": prev, "last": last, "asof": ld, "prev_asof": pd_}
+    if freq == "daily":   # a daily FRED close counts as its day's close, 5 pm ET (the page reads it "daily close · Oct 16")
+        # ponytail: FRED dates the reading, not the minute; 5 pm ET is the bond market's close. Upgrade: Treasury's own daily-yield XML.
+        m["last_time"] = int(datetime.fromisoformat(ld).replace(hour=17, tzinfo=ET).timestamp())
     if freq == "monthly" and kind == "pct" and len(rows) > 12:
         m["yoy"] = round((last / rows[-13][1] - 1) * 100, 2)      # against the same month a year before
     return m
@@ -699,7 +727,12 @@ def selfcheck():
     specs = {s[0]: s for _, _, _, sp in ECON for s in sp}
     assert all(k in specs and "trillion" in specs[k][5] for k in ECON_SCALE), "every scaled series names its scaled unit"
     assert urllib.parse.urlparse(IMF_SDMX).hostname in UNVERIFIED_OK and "stats.bis.org" not in UNVERIFIED_OK
-    assert all(s[2] in "yfimt" and s[6] in ("5min", "weekly", "monthly", "quarterly", "yearly") for _, _, _, sp in ECON for s in sp)
+    assert all(s[2] in "yfimt" and s[6] in ("5min", "daily", "weekly", "monthly", "quarterly", "yearly") for _, _, _, sp in ECON for s in sp)
+    assert all(s[2] == "f" for _, _, _, sp in ECON for s in sp if s[6] == "daily")   # only FRED gets the 5 pm stamp below
+    assert _px(0.07968912) == 0.079689 and _px(81969.90625) == 81969.9062   # small prices keep their digits; big ones are unchanged
+    dm = econ_fred(("t2y", "2-year", "f", "DGS2", "bp", "%", "daily"), [("2026-10-15", 4.77), ("2026-10-16", 4.74)])
+    assert dm["last_time"] == int(datetime(2026, 10, 16, 17, tzinfo=ET).timestamp()), dm   # its own day's close, never now
+    assert "last_time" not in econ_fred(("m", "M", "f", "X", "pct", "u", "monthly"), [("2026-08-01", 1.0), ("2026-09-01", 2.0)])
     # economy: parse_fred drops '.' rows; a member is last-vs-the-close-before, dated by its own reading
     rows = parse_fred("observation_date,X\n2026-06-01,10\n2026-07-01,.\n2026-08-01,12.5\n")
     assert rows == [("2026-06-01", 10.0), ("2026-08-01", 12.5)], rows
