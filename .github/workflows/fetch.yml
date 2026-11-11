@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - run: python3 fetch.py --selfcheck
-      - run: tools/loop.sh fetch.yml 600 market tools/market_round.sh
+      - run: tools/loop.sh fetch.yml 120 market tools/market_round.sh   # 11-10: a round every 2 minutes (was 10); one takes ~30 s
         env:
           GH_TOKEN: "${{ github.token }}"
           LOOP_FORCE: "${{ github.event.inputs.force }}"

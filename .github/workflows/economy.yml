@@ -31,8 +31,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - run: python3 fetch.py --selfcheck
-      - run: tools/loop.sh economy.yml 900 econ tools/economy_round.sh
+      - run: tools/loop.sh economy.yml 180 econ tools/economy_round.sh   # 11-10: prices every 3 minutes (was 15); the slow sources stay on ~15 (fetch.py SLOW_EVERY)
         env:
+          LOOP_WAKE: "fetch.yml companies.yml"   # this chain outlives the close, so it restarts the market chains at the open (tools/loop.sh)
           GH_TOKEN: "${{ github.token }}"
           LOOP_FORCE: "${{ github.event.inputs.force }}"
           CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}"

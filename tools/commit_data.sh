@@ -22,17 +22,18 @@ done
 # Mirror the page to the Cloudflare Pages preview (our own account, 2026-10-03). After the rebase the
 # tree holds every workflow's latest data, so each deploy is the whole site as of now. Only the files the
 # page loads go up: never HANDOFF, plans or client mail. A failed deploy warns; the data push already landed.
-# ponytail: at most one deploy per job per 9 min (≈ one per round; ~160 on a busy weekday across the three
-# jobs). The page copied up is whole: _headers rides along. Ceiling: Cloudflare's docs don't say whether direct uploads count against the Free plan's 500
-# builds/month; if they do, deploys start failing early in the month. Upgrade path: one deploy workflow on
-# a slower clock, or the client's own Cloudflare account on a paid plan.
+# ponytail: at most one deploy per job per 100 s (= one per 2-3 minute round, 11-10; was 9 min. Up to ~700 on a
+# weekday across the three jobs). The page copied up is whole: _headers rides along. ~160 direct uploads a day ran
+# 10-10..11-06 without a refusal, so they are not held to the Free plan's 500 builds/month; Ceiling: whether ~700 a day
+# meets some other limit is not measured — a refused deploy fails the round loudly below. Upgrade path: one deploy
+# workflow on its own clock, or the page reading its data from a function instead of a deploy.
 # A deploy is expected as soon as either secret is set; then anything short of a deploy is an error (10-08: a missing
 # or expired token used to exit 0 and leave the live site frozen behind a green run). Neither set = GitHub Pages only.
 [ -n "$CLOUDFLARE_API_TOKEN$CF_PAGES_PROJECT" ] || { echo "no CLOUDFLARE_API_TOKEN and no CF_PAGES_PROJECT, skip Pages deploy"; exit 0; }
 [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::CF_PAGES_PROJECT is set but CLOUDFLARE_API_TOKEN is missing: no Pages deploy"; exit 1; }
 [ -n "$CF_PAGES_PROJECT" ] || { echo "::error::CLOUDFLARE_API_TOKEN is set but CF_PAGES_PROJECT is not: refusing to guess the project"; exit 1; }
 stamp="${RUNNER_TEMP:-/tmp}/mm_pages_deployed"
-[ -f "$stamp" ] && [ $(( $(date +%s) - $(cat "$stamp") )) -lt 540 ] && { echo "deployed <9 min ago, skip"; exit 0; }
+[ -f "$stamp" ] && [ $(( $(date +%s) - $(cat "$stamp") )) -lt 100 ] && { echo "deployed <100 s ago, skip"; exit 0; }
 site=$(mktemp -d)
 cp index.html economy.html mood.js _headers "$site"/ && cp -R data assets "$site"/ \
   && npx --yes wrangler@4 pages deploy "$site" --project-name="$CF_PAGES_PROJECT" \

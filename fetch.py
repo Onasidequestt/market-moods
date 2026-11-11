@@ -614,14 +614,21 @@ def get_trade(code):
     ex, im = (dict(get_fred(x)) for x in code.split(":"))
     return [(d, ex[d] - im[d]) for d in sorted(ex) if d in im]
 
+SLOW_EVERY = 840   # seconds: just under 15 minutes, the rhythm the slow sources were asked at before the rounds sped up
+
 def build_economy(prev=None):
     old = {m["key"]: m for g in (prev or {}).get("groups", []) for m in g["members"]}   # last good file, for a series that fails right now
     groups, missing = [], [{"group": g, "name": n, "why": w} for g, n, w in ECON_MISSING]
+    # the rounds come every 3 minutes for the prices (11-10); FRED, the IMF and the BIS publish daily at best, so their
+    # numbers are re-asked only every SLOW_EVERY and reused from the last file in between (a carried one stays carried)
+    slow_at = (prev or {}).get("slow_at", 0); reuse = 0 <= time.time() - slow_at < SLOW_EVERY
     for gkey, gname, gshort, specs in ECON:
         mem = []
         for spec in specs:
             try:
-                if spec[2] == "y":
+                if reuse and spec[2] != "y" and spec[0] in old:
+                    mem.append(old[spec[0]])
+                elif spec[2] == "y":
                     try: intr = get(spec[3], "5m", "5d")
                     except Exception: intr = None
                     mem.append(econ_yahoo(spec, get(spec[3], "1d", "1mo"), intr)); time.sleep(0.3)
@@ -643,7 +650,7 @@ def build_economy(prev=None):
     for g in groups:
         for m in g["members"]: m["short"] = ECON_SHORT.get(m["key"], m["name"])
     return {"generated_at": int(time.time()), "source": "Yahoo Finance (delayed futures and yields), FRED and the IMF World Economic Outlook (each series at its own release rhythm)",
-            "groups": groups, "missing": missing}
+            "slow_at": slow_at if reuse else int(time.time()), "groups": groups, "missing": missing}
 
 def selfcheck():
     # two ET days: 09-24 (daily close 100) then 09-25 session 101 -> 103, one null bar
@@ -770,7 +777,23 @@ def selfcheck():
     energy = out["groups"][0]["members"]
     assert [m["key"] for m in energy] == ["brent"] and energy[0]["carried"] and energy[0]["last"] == 98.6, energy
     assert any(x["name"] == "WTI crude" and "down" in x["why"] for x in out["missing"]) and not any(x["name"] == "Brent crude" for x in out["missing"]), out["missing"]
-    print("✓ fetch selfcheck: 34 asserts")
+    # between slow fetches a slow number is reused untouched and the slow sources are not asked; a price is always asked
+    slow_spec = next(s for _, _, _, sp in ECON for s in sp if s[2] != "y")
+    kept = {"key": slow_spec[0], "name": slow_spec[1], "last": 1.5, "asof": "2026-09-01", "freq": "monthly"}
+    asked = []
+    def spy(*a, **k): asked.append(a); raise OSError("down")
+    doors = ("get_fred", "get_imf", "get_sdmx", "get_csv"); real_d = [g[d] for d in doors]
+    g["get"] = spy; g.update({d: down for d in doors})
+    try:
+        out = build_economy({"slow_at": int(time.time()) - 60, "groups": [{"members": [kept, prev_e["groups"][0]["members"][0]]}]})
+        late = build_economy({"slow_at": int(time.time()) - SLOW_EVERY - 1, "groups": [{"members": [kept]}]})
+    finally:
+        g["get"] = real[0]; g.update(zip(doors, real_d))
+    got = [m for gr in out["groups"] for m in gr["members"]]
+    assert [(m["key"], m.get("carried")) for m in got] == [("brent", True), (slow_spec[0], None)] and asked, (got, len(asked))   # the price was asked (and carried: its door is down), the slow number was not
+    assert out["slow_at"] < int(time.time()) - 30 and late["slow_at"] >= int(time.time()) - 5, (out["slow_at"], late["slow_at"])
+    assert [m for gr in late["groups"] for m in gr["members"]][0].get("carried"), late   # past SLOW_EVERY the source IS asked again
+    print("✓ fetch selfcheck: 37 asserts")
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv: selfcheck(); sys.exit(0)

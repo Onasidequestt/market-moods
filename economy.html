@@ -287,7 +287,7 @@
     return api;
   })();
   // END PANEL-JS
-  const DATA_URL = "data/economy.json", REFRESH_MS = 5 * 60 * 1000;
+  const DATA_URL = "data/economy.json", REFRESH_MS = 60 * 1000;   // 11-10: prices are refetched every 3 minutes (was 15)
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const DROPS = 5;
   const clampN = (v, a, b) => Math.min(b, Math.max(a, v));

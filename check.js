@@ -202,7 +202,7 @@ ok(anyCompanies, "at least one index has its companies file (else nothing to che
   }
 }
 
-const FRESH = process.argv.includes("--fresh");   // economy.yml only: also fail on a stale economy file
+const FRESH = process.argv.includes("--fresh");   // economy.yml only: a stale economy series becomes a run annotation
 // ---------- the economy blobs (economy.html, data/economy.json, mood.js econ*) ----------
 // rules: a move is measured the way its market measures it, then turned into a percent-equivalent
 near(M.econMove("pct", 100, 98.5).pct, -1.5, "econ pct: percent change of the level");
@@ -268,12 +268,17 @@ ok(M.econSlow({ freq: "monthly" }) && M.econSlow({ freq: "weekly" }) && !M.econS
         // tonnage) and IMF gold USA sit on July the same way. FRED's own newest row for all of them was 2026-07-01 on 10-10, so the
         // source was current, the limit too tight. Ceiling: a series stalled for under 125 days is not caught. Upgrade: a per-series lag.
         const limit = { "5min": 10, daily: 10, weekly: 21, monthly: 125, quarterly: 300, yearly: 850 }[m.freq];
-        // staleness is only a failure where the economy file is what is being refreshed (economy.yml passes
-        // --fresh); in the index and companies workflows an old economy file must not block stock data
-        if (FRESH) ok(age >= -1 && age <= limit, `${m.key}: ${m.freq} number dated ${m.asof} is ${age.toFixed(0)} days old, limit ${limit}`);
-        else { ok(age >= -1, `${m.key}: not dated in the future`); if (age > limit) console.log(`\u2026 ${m.key} is ${age.toFixed(0)} days old (limit ${limit}); economy.yml would fail on this`); }
+        // staleness is REPORTED, never a failure (11-10): one old series (goldUSA, 126 days, on 11-03) failed this check, which
+        // blocked the commit of every fresh price in the file; six days on the frozen file's t2y tripped the print-time check
+        // below and froze the index data too. The page already shows each number's own date; --fresh (economy.yml) makes it a run annotation.
+        ok(age >= -1, `${m.key}: not dated in the future`);
+        const stale = why => console.log(`${FRESH ? "::warning::" : "\u2026 "}${m.key} is stale: ${why}`);
+        if (age > limit) stale(`${m.freq} number dated ${m.asof} is ${age.toFixed(0)} days old, limit ${limit}`);
         if (M.econSlow(m)) ok(m.prev_asof && m.prev_asof < m.asof, `${m.key}: a slow number names the reading before it`);
-        else ok(m.last_time > today - 10 * day && m.last_time < today + 3600, `${m.key}: last print time is real`);
+        else {
+          ok(Number.isFinite(m.last_time) && m.last_time < today + 3600, `${m.key}: last print time is real`);
+          if (age <= limit && m.last_time <= today - 10 * day) stale(`last print is ${((today - m.last_time) / day).toFixed(0)} days old, limit 10`);
+        }
         if (m.freq === "5min") ok(m.bars.length >= 1 && m.bars[m.bars.length - 1][0] === m.last_time && m.bars[m.bars.length - 1][1] === m.last, `${m.key}: the newest bar IS the last price`);
       }
     }

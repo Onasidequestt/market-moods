@@ -400,7 +400,7 @@
   })();
   // END PANEL-JS
   const DATA_URL = "data/market.json";
-  const REFRESH_MS = 5 * 60 * 1000;
+  const REFRESH_MS = 60 * 1000;   // 11-10: the index file is refetched every 2 minutes (was 10), so ask every minute (was 5)
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const REPLAY_SECONDS = reduced ? 120 : 60;   // one whole trading day
   const HOLD_SECONDS = 4;                       // pause on the close before looping
@@ -523,7 +523,8 @@
       // only once their door is opened, so the lamp page never pulls all four company files up front
       // market.json lists which company files exist (fetch.py); an older file without the list falls back to a HEAD probe
       if (firstLoad) CELL_KEYS.forEach(k => k !== "sp500" && (Array.isArray(data.companies) ? markCell(k, data.companies.includes(k)) : probeCell(k)));
-      if (!(cellState.sp500 && cellState.sp500.comp) || mode === "live") loadCompanies("sp500");
+      // the companies file (~290 KB gzip) is rewritten every 15 minutes; the index file now changes every 2, so ask for it at most every 5
+      if (!(cellState.sp500 && cellState.sp500.comp) || (mode === "live" && Date.now() - (cellState.sp500.at || 0) > 5 * 60 * 1000)) loadCompanies("sp500");
       // #cell&idx=<key> opens once <key>'s data is in (loadCompanies opens it on success, never on
       // failure); for keys other than sp500 that means asking for it explicitly here
       if (firstLoad && wantCellOnLoad && cellKey !== "sp500") loadCompanies(cellKey);
@@ -967,7 +968,7 @@
   async function loadCompanies(key) {
     const st = cellState[key] || (cellState[key] = {});
     if (st.loading) return;
-    st.loading = true;
+    st.loading = true; st.at = Date.now();
     try {
       const r = await fetch(cellUrl(key) + "?t=" + Date.now(), { cache: "no-store" });
       if (!r.ok) throw new Error("HTTP " + r.status);
