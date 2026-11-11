@@ -158,6 +158,12 @@
   .btn[hidden] { display: none; }
   .btn.day { height: 28px; padding: 0 11px; font-size: 12px; color: var(--ink-2); }
   .btn.day[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-color: var(--ink); }
+  /* the week's mood under the playhead: date over the day's mood word, in its mood colour */
+  .btn.day.mood { flex: 1 1 0; min-width: 0; max-width: 128px; height: auto; min-height: 36px; padding: 4px 8px; flex-direction: column; gap: 1px; line-height: 1.15; }
+  .btn.day.mood .dd { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+  .btn.day.mood .dw { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .btn.day.mood[aria-pressed="true"] { background: rgba(244, 236, 247, .12); color: var(--ink); border-color: var(--ink); }
+  .btn.day.mood[aria-pressed="true"] .dd { color: var(--ink-2); }
   .timeline { display: flex; align-items: center; gap: 10px; margin: 20px 0 12px; }
   .track { position: relative; flex: 1; height: 26px; display: flex; align-items: center; cursor: pointer; touch-action: none;
     --mood: #f0a030; --beat: 0; }
@@ -279,7 +285,7 @@
   @media (max-height: 600px) { .timeline { margin: 19px 0 8px; } .days { margin-bottom: 4px; } }
   @media (max-height: 600px) and (max-width: 640px) {   /* part 2: a short phone (320x568) had a 61px stage for two rows; as on a short wide window the row itself is the door and the level waits in the cell */
     .idx .lvl { display: none; } .idx.hasdoor .look { display: none; } }
-  @media (max-width: 360px) { .btn.day { padding: 0 8px; font-size: 11.5px; } }   /* five days on one row at 320px, not four and an orphan */
+  @media (max-width: 360px) { .btn.day { padding: 0 8px; font-size: 11.5px; } .btn.day.mood { padding: 4px 3px; } .btn.day.mood .dw { font-size: 11.5px; } }   /* five days on one row at 320px, not four and an orphan */
   @media (max-width: 360px) { .idx { padding: 5px; } .idx .name { gap: 4px; } }   /* part 2: one word ("Nasdaq") cannot wrap; at 320px it needs these 4px */
   @media (max-height: 600px) and (min-width: 641px) {   /* short and wide: each index row is ONE line (name · move · door), the stage gets the height; the level is in its details panel */
     .idx { grid-template-columns: minmax(0, 1fr) auto auto; } .idx .lvl, .idx .chop { display: none; } .idx .look { grid-column: 3; grid-row: 1; }
@@ -343,7 +349,7 @@
       <span class="seg" role="group" aria-label="What blob size means"><span class="lbl2">Size</span>
         <button class="btn opt" type="button" data-size="cap">Company value</button><button class="btn opt" type="button" data-size="move">Size of move</button></span>
     </div>
-    <div class="days" id="days" role="group" aria-label="Trading day to replay" hidden></div>
+    <div class="days" id="days" role="group" aria-label="Mood of the past week" hidden></div>
     <div class="timeline" id="timeline" hidden>
       <button class="btn" id="playBtn" type="button" aria-label="Pause replay"><svg viewBox="0 0 16 16" aria-hidden="true" id="playIcon"><path d="M4 2h3v12H4zm5 0h3v12H9z"/></svg></button>
       <span class="ends">9:30</span>
@@ -462,6 +468,7 @@
 
   // ---------- state ----------
   let data = null, mode = "none", stale = false, days = [], curDay = null;
+  let marketMode = "none", pinned = null;   // what the market is doing; a past day picked to replay while it is live
   let pos = 0, hold = 0, paused = false;
   const lanes = [];            // per index: smoothed values + phases
   // economy groups (data/economy.json) ride beside the indexes as smaller blobs; their move is the same
@@ -545,11 +552,13 @@
       data = d;
       buildReadouts(); readoutDoors();
       const st = Mood.marketState(Date.now(), Math.max(...d.indexes.map(i => i.last_time)));
-      const newMode = st.mode; stale = !!st.stale;
-      // replay days = the dates all four indexes share; live always shows today
+      marketMode = st.mode; stale = !!st.stale;
+      // replay days = the dates all four indexes share; live shows today unless a past day is pinned (it stays put across refreshes)
       days = d.indexes[0].sessions.map(x => x.date).filter(dt => d.indexes.every(ix => ix.sessions.some(x => x.date === dt)));
+      if (marketMode !== "live" || !days.includes(pinned) || pinned === d.indexes[0].session_date) pinned = null;
+      const newMode = pinned ? "replay" : marketMode;
       const hashDay = (/day=(\d{4}-\d{2}-\d{2})/.exec(location.hash) || [])[1];
-      const want = newMode === "live" ? d.indexes[0].session_date
+      const want = pinned || newMode === "live" ? pinned || d.indexes[0].session_date
         : firstLoad && days.includes(hashDay) ? hashDay : days.includes(curDay) ? curDay : days[days.length - 1];
       useDay(want);
       if (newMode !== mode || firstLoad) { pos = newMode === "live" ? lastPos() : startPos(d); hold = 0; }
@@ -562,7 +571,8 @@
       if (gl && !inCell) { draw(); ui(); }   // place the labels against a drawn lamp on the very first paint
       $("notice").classList.remove("on");
       $("timeline").hidden = mode !== "replay";
-      $("days").hidden = mode !== "replay" || days.length < 2;   // before the first draw: it measures the footer
+      // the week's moods show live and in replay; without daily history it is the replay picker as before
+      $("days").hidden = histRows(7).rows.length ? false : mode !== "replay" || days.length < 2;   // before the first draw: it measures the footer
       step(0); ui(); if (gl) draw(); // numbers and lamp show at once, not after the first slow frames
       // eager only for sp500 (its door opens first, ~290 KB gzip); the other three load lazily,
       // only once their door is opened, so the lamp page never pulls all four company files up front
@@ -604,15 +614,30 @@
     }
   }
   const dayLabel = (date, opts) => new Date(date + "T12:00:00Z").toLocaleDateString("en-US", Object.assign({ timeZone: "UTC" }, opts));
+  // the strip over the playhead: each trading day of the past week with its mood (the history's 7D rows). A day the
+  // lamp holds 5-minute bars for replays it while the market is closed; any other tap opens that day in the history.
   function buildDays() {
     const box = $("days"); box.textContent = "";
-    days.forEach(dt => {
-      const b = document.createElement("button");
-      b.type = "button"; b.className = "btn day"; b.textContent = dayLabel(dt, { weekday: "short" }) + " " + +dt.slice(8);
-      b.setAttribute("aria-pressed", dt === curDay); b.title = dayLabel(dt, { weekday: "long", month: "long", day: "numeric" });
-      b.onclick = () => { useDay(dt); pos = 0; hold = 0; buildDays(); step(0); ui(); };
+    const week = histRows(7).rows;
+    (week.length ? week : days.map(date => ({ date }))).forEach(r => {
+      const dt = r.date, b = document.createElement("button"), label = dayLabel(dt, { weekday: "short" }) + " " + +dt.slice(8);
+      b.type = "button"; b.className = "btn day" + (r.word ? " mood" : "");
+      if (r.word) b.innerHTML = `<span class="dd">${label}</span><span class="dw" style="color:${moodInk(r.pct)}">${r.word}</span>`;
+      else b.textContent = label;
+      b.setAttribute("aria-pressed", dt === curDay);
+      b.title = dayLabel(dt, { weekday: "long", month: "long", day: "numeric" }) + (r.word ? ` · ${r.word} ${sgn(r.pct)}` : "");
+      b.onclick = days.includes(dt) ? () => pickDay(dt) : () => openHist(dt);
       box.appendChild(b);
     });
+  }
+  // show a day on the lamp: today while the market is live goes back to live; any other day replays from the open
+  function pickDay(dt) {
+    pinned = marketMode === "live" && dt !== data.indexes[0].session_date ? dt : null;
+    useDay(dt);
+    mode = marketMode === "live" && !pinned ? "live" : "replay";
+    pos = mode === "live" ? lastPos() : 0; hold = 0;
+    $("timeline").hidden = mode !== "replay";   // before the draw: the labels measure the footer
+    buildDays(); step(0); ui(); if (gl) draw();
   }
   const lastPos = () => Math.min(...data.indexes.map(i => i.bars.length - 1));
 
@@ -965,7 +990,7 @@
     if (mode === "live") {
       setStatus("live", `Live, delayed · as of ${fmtET(barT, { hour: "numeric", minute: "2-digit" })} ET`);   // the as-of time IS the delay
     } else {
-      setStatus("replay", (stale ? "Feed behind · replaying " : "Market closed · replaying ") + day);
+      setStatus("replay", (pinned ? "Market open · replaying " : stale ? "Feed behind · replaying " : "Market closed · replaying ") + day);
       $("clock").textContent = fmtET(barT, { hour: "numeric", minute: "2-digit" }) + " ET";
       const pct100 = (pos / lastPos() * 100);
       const tw = track.clientWidth, cw = $("clock").offsetWidth;   // the time rides above the dot, kept inside the track
@@ -1395,10 +1420,10 @@
   const IX_SHORT = ["Dow", "S&P", "Nasdaq", "Russell"];
   const sgn = (v, dg = 2) => (v > 0 ? "+" : v < 0 ? "\u2212" : "") + Math.abs(v).toFixed(dg) + "%";
   const moodInk = pct => hex(Mood.colour(pct).map(v => v * 0.35 + 0.65));
-  function histRows() {
+  function histRows(range = histRange) {
     const all = data ? Mood.moodHistory(data.indexes) : [];
     if (!all.length) return { all, rows: [] };
-    const end = new Date(all[all.length - 1].date + "T12:00:00Z"); end.setUTCDate(end.getUTCDate() - histRange);
+    const end = new Date(all[all.length - 1].date + "T12:00:00Z"); end.setUTCDate(end.getUTCDate() - range);
     const cut = end.toISOString().slice(0, 10);
     return { all, rows: all.filter(r => r.date > cut) };
   }
@@ -1469,19 +1494,19 @@
   }
   function histDay(r) {
     const box = $("hDay"); if (!r) { box.textContent = ""; return; }
-    const today = data && r.date === data.indexes[0].session_date && mode === "live";
+    const today = data && r.date === data.indexes[0].session_date && marketMode === "live";
     box.innerHTML = `<div class="t">${dayLabel(r.date, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}${today ? " · so far today" : ""}</div>
       <div class="w" style="color:${moodInk(r.pct)}">${r.word}<span class="num">${sgn(r.pct)}</span></div>
       <div class="ix num">${r.each.map((v, i) => `<div>${IX_SHORT[i]}<b style="color:${moodInk(v)}">${sgn(v)}</b></div>`).join("")}</div>`;
-    // the lamp can replay the days it has 5-minute bars for, while the market is closed
-    if (mode === "replay" && days.includes(r.date)) {
-      const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.textContent = "Replay this day on the lamp \u203a";
-      b.onclick = () => { useDay(r.date); pos = 0; hold = 0; buildDays(); step(0); ui(); $("hist").close(); };
+    // the lamp can show any day it has 5-minute bars for (live or not)
+    if (days.includes(r.date) && r.date !== curDay) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.textContent = (marketMode === "live" && r.date === data.indexes[0].session_date ? "Back to live" : "Show this day on the lamp") + " \u203a";
+      b.onclick = () => { $("hist").close(); pickDay(r.date); };
       box.appendChild(b);
     }
   }
-  function openHist() { histSel = null; renderHist(); const h = $("hist"); if (!h.open) h.showModal(); h.scrollTop = 0; }
-  $("histBtn").onclick = openHist;
+  function openHist(day) { if (day) histRange = 7; histSel = day || null; renderHist(); const h = $("hist"); if (!h.open) h.showModal(); h.scrollTop = 0; }
+  $("histBtn").onclick = () => openHist();
   $("histClose").onclick = () => $("hist").close();
   document.querySelectorAll("#hist [data-range]").forEach(b => b.onclick = () => { histRange = +b.dataset.range; renderHist(); });
   $("helpClose").onclick = () => $("help").close();
@@ -1556,7 +1581,6 @@
   setInterval(loadEcon, REFRESH_MS);   // economy.json has its own cron: refresh it even when market.json has not changed
   requestAnimationFrame(frame);
   if (/(^#|&)help(&|$)/.test(location.hash)) openHelp();   // #help: for browser-check.sh only
-  { const m = /(?:^#|&)hist(?:=(\d+))?(?:&|$)/.exec(location.hash); if (m) { if (m[1]) histRange = +m[1]; openHist(); } }   // #hist=30: a link straight to a period
   window.__mm = { get mode() { return mode; }, get pos() { return pos; }, lanes, get data() { return data; }, gl: !!gl,
                   get inCell() { return inCell; }, cellNodes,
                   blobXY(key) { const H = innerHeight, L = lanes.concat(econ).find((l, i) => (data.indexes[i] ? data.indexes[i].key : l.key) === key);   // browser checks: where a blob is NOW, in client px
