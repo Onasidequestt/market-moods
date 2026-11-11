@@ -16,7 +16,9 @@ case "$when" in market|econ) ;; *) echo "::error::loop.sh: mode must be market o
 end=$(( $(date +%s) + 3000 ))     # one link lasts ~50 min (job cap is 6 h; a gap between links is seconds)
 n=0; bad=0
 wake() {
-  [ -n "$LOOP_WAKE" ] && [ -z "$LOOP_FORCE" ] && python3 fetch.py --market-open || return 0
+  [ -n "$LOOP_WAKE" ] || return 0
+  # LOOP_FORCE=wake (manual test): wake as if NYSE were open; the woken chains see a closed market and stop
+  [ "$LOOP_FORCE" = wake ] || { [ -z "$LOOP_FORCE" ] && python3 fetch.py --market-open; } || return 0
   for w in $LOOP_WAKE; do
     live=$(gh run list -w "$w" -L 5 --json status --jq '[.[]|select(.status!="completed")]|length') || continue   # cannot tell: do not pile runs up
     [ "$live" = 0 ] || continue
