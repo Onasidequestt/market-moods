@@ -94,6 +94,11 @@ ok(M.pulseAmp(1) >= 0.05 && M.pulseAmp(0.05) > 0.01, "busy beats harder, even a 
 ok(M.volumeWord(0) === "closed" && M.volumeWord(0.2) === "quiet" && M.volumeWord(0.5) === "normal" && M.volumeWord(0.9) === "busy", "volume words");
 { const s = M.avgSeries([{ prev_close: 100, bars: [[0, 101], [1, 102], [2, 103]] }, { prev_close: 200, bars: [[0, 200], [1, 198]] }]);
   ok(s.length === 2 && Math.abs(s[0] - 0.5) < 1e-9 && Math.abs(s[1] - 0.5) < 1e-9, "avgSeries: mean move per bar, shortest index sets the length"); }
+{ const h = M.moodHistory([{ daily: [["2026-11-02", 100], ["2026-11-03", 102], ["2026-11-04", 101.49]] },
+                           { daily: [["2026-11-03", 200], ["2026-11-04", 198]] }]);
+  ok(h.length === 1 && h[0].date === "2026-11-04" && Math.abs(h[0].each[0] - -0.5) < 1e-9 && Math.abs(h[0].pct - -0.75) < 1e-9 && h[0].word === "Uneasy",
+     "moodHistory: a day only when every index has a prior close; each from its OWN previous close; word = moodWord(mean) " + JSON.stringify(h));
+  ok(M.moodHistory([{}, {}]).length === 0, "moodHistory: no daily field = no history (honest empty, not a crash)"); }
 const SECS_SHORT_OK = () => M.SECTOR_ORDER.every(x => M.sectorShort(x).length <= 12);
 ok(M.sectorShort("Information Technology") === "Tech" && M.sectorShort("Energy") === "Energy" && SECS_SHORT_OK(), "phone tags are whole words, never a slice");
 ok(M.sectorHue("Energy") !== M.sectorHue("Utilities") && M.sectorHue("Energy") === M.sectorHue("Energy"), "sector identity hues are stable and distinct");
@@ -139,6 +144,13 @@ for (const i of d.indexes) {
   ok(i.sessions.map(x => x.date).join() === dates.join(), i.key + ": same days as the Dow");
   const L = i.sessions[i.sessions.length - 1];
   ok(L.date === i.session_date && L.prev_close === i.prev_close && L.bars.length === i.bars.length, i.key + ": last session = top level");
+  // daily (the mood history's year): oldest first, one row per date, ending on the lamp's own day at the lamp's own price,
+  // and every replay day's prev_close is a daily row — so the history's word for a day is the word the lamp gave it
+  if (i.daily) { const dd = i.daily.map(r => r[0]), last = i.daily[i.daily.length - 1];
+    ok(dd.every((x, k) => k === 0 || x > dd[k - 1]) && i.daily.every(r => r[1] > 0), i.key + ": daily oldest first, one priced row per date");
+    ok(last[0] === i.session_date && last[1] === i.last, `${i.key}: daily ends on the lamp's day and price (${last} vs ${i.session_date} ${i.last})`);
+    for (const S of i.sessions) { const k = dd.indexOf(S.date);
+      ok(k > 0 && Math.abs(i.daily[k - 1][1] / S.prev_close - 1) < 1e-6, `${i.key} ${S.date}: daily's previous row = the session's prev_close`); } }
   for (let k = 1; k < i.sessions.length; k++) {
     const prev = i.sessions[k - 1], cur = i.sessions[k];
     // a day's prev_close is the day before's close; its last 5-min bar sits within 0.3% of that close

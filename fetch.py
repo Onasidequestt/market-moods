@@ -67,14 +67,19 @@ def shape(key, name, sym, intraday, daily):
                          "bars": [[t, round(c, 2), vols.get(t)] for t, c in bars if day(t) == d]})
     if not sessions: raise ValueError(f"{sym}: no daily close before {day(bars[-1][0])}")
     last = sessions[-1]
+    # `daily` = [date, close] for every day the daily series has (a year for the indexes), one row per ET
+    # date (the last kept: Yahoo can repeat today's forming row). The mood history reads it; today's row
+    # is replaced by the live last price so the history's last day always agrees with the lamp.
+    dd = {day(t).isoformat(): round(c, 2) for t, c in closes}
+    dd[last["date"]] = last["bars"][-1][1]
     return {"key": key, "name": name, "symbol": sym, "session_date": last["date"],
             "prev_close": last["prev_close"], "last": last["bars"][-1][1], "last_time": last["bars"][-1][0],
-            "bars": last["bars"], "sessions": sessions}
+            "bars": last["bars"], "sessions": sessions, "daily": sorted([d, c] for d, c in dd.items())}
 
 def build():
     out = []
     for key, name, sym in INDEXES:
-        out.append(shape(key, name, sym, get(sym, "5m", "5d"), get(sym, "1d", "1mo")))
+        out.append(shape(key, name, sym, get(sym, "5m", "5d"), get(sym, "1d", "1y")))   # 1y: the mood history's year
         time.sleep(0.5)
     # the fear gauge: ^VIX on the same Yahoo source, shaped by the SAME shape() function as the
     # four indexes (rule 1: reuse, not a parallel parser) — kept as its own top-level field, not a
@@ -658,12 +663,14 @@ def selfcheck():
     d24 = int(datetime(2026, 9, 24, 16, 0, tzinfo=ET).timestamp())
     intr = {"timestamp": [d24, t0, t0 + 300, t0 + 600],
             "indicators": {"quote": [{"close": [99.0, 101.0, None, 103.0], "volume": [500, 1200, None, None]}]}}
-    daily = {"timestamp": [d24 - 86400, d24, t0], "indicators": {"quote": [{"close": [98.0, 100.0, 103.0]}]}}
+    daily = {"timestamp": [d24 - 86400, d24, t0], "indicators": {"quote": [{"close": [98.0, 100.0, 102.0]}]}}
     s = shape("sp500", "S&P 500", "^GSPC", intr, daily)
     assert s["session_date"] == "2026-09-25", s
     assert s["prev_close"] == 100.0, s          # the 09-24 close, not the 09-25 daily row
     assert s["bars"] == [[t0, 101.0, 1200], [t0 + 600, 103.0, None]], s   # prior day + null dropped; volume rides along
     assert s["last"] == 103.0 and s["last_time"] == t0 + 600
+    # daily: one row per date, oldest first; today's row is the live last price (103), never a stale daily print
+    assert s["daily"] == [["2026-09-23", 98.0], ["2026-09-24", 100.0], ["2026-09-25", 103.0]], s["daily"]
     # volume heartbeat: no volume field at all in the source -> every bar's volume is null (honest
     # empty state, never zero — zero would look like real, quiet trading)
     intr_nv = {"timestamp": [t0], "indicators": {"quote": [{"close": [101.0]}]}}

@@ -205,6 +205,37 @@
   dialog .close { margin-top: 16px; width: 100%; }
 
   #econBtn { white-space: nowrap; }
+  /* mood history: tabs over one view — the week as tiles, longer periods as one bar per day */
+  #hist { width: min(620px, calc(100% - 32px)); }
+  .hTabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .hTabs .btn.opt { flex: 1 1 0; min-width: 0; padding: 0 6px; }
+  .hSum { margin: 12px 0 10px; font-size: 13px; color: var(--ink-2); min-height: 1.3em; }
+  .hSum b { font-weight: 600; }
+  .hTiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
+  .hTile { appearance: none; text-align: left; font: inherit; color: var(--ink); cursor: pointer; background: var(--glass);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 9px; border-top: 3px solid var(--c); }
+  .hTile:hover { border-color: rgba(244, 236, 247, .32); border-top-color: var(--c); }
+  .hTile:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .hTile[aria-pressed="true"] { background: rgba(244, 236, 247, .1); border-color: var(--ink); border-top-color: var(--c); }
+  .hTile .d { font-size: 11.5px; color: var(--ink-3); letter-spacing: .04em; }
+  .hTile .w { margin-top: 4px; font-family: Fraunces, Georgia, serif; font-size: 18px; color: var(--c); }
+  .hTile .p { margin-top: 1px; font-size: 12.5px; color: var(--ink-2); }
+  .hChart { display: block; width: 100%; height: auto; touch-action: pan-y; cursor: crosshair; border-radius: 8px; }
+  .hChart:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .hChart text { fill: var(--ink-3); font-size: 10px; }
+  .hChart .g { stroke: var(--line); stroke-width: 1; }
+  .hChart .z { stroke: rgba(244, 236, 247, .32); stroke-width: 1; }
+  .hChart .avg { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; opacity: .85; }
+  .hChart .sel { fill: rgba(244, 236, 247, .1); }
+  .hKey { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; font-size: 11px; color: var(--ink-3); }
+  .hDay { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); min-height: 64px; }
+  .hDay .t { font-size: 12.5px; color: var(--ink-3); }
+  .hDay .w { font-family: Fraunces, Georgia, serif; font-size: 24px; line-height: 1.2; }
+  .hDay .w span { font-family: inherit; font-size: 14px; color: var(--ink-2); margin-left: 8px; }
+  .hDay .ix { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 8px; font-size: 12px; color: var(--ink-3); }
+  .hDay .ix b { display: block; font-size: 13.5px; font-weight: 600; }
+  .hDay .btn { margin-top: 10px; }
+  .hEmpty { padding: 18px 0; color: var(--ink-2); font-size: 14px; }
   @media (max-width: 640px) {
     body.incell #econBtn { display: none; }   /* four buttons squeezed the status pill onto the title */
     .readouts { gap: 6px; }
@@ -283,6 +314,7 @@
     <a class="credit" id="credit" href="https://humblebusinessconsulting.com/" target="_blank" rel="noopener"><img src="assets/humble_crest.png" alt="Humble Services Business Consulting" width="416" height="520"><span>A complementary tool provided by Humble Services Business Consulting for your eyes on the global markets.</span></a>
     <div class="tools">
       <button class="btn" id="backBtn" type="button" aria-label="Back to the lamp" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 2 4.5 8l6 6 1.4-1.4L7.3 8l4.6-4.6z"/></svg><span class="lbl">Back to the lamp</span></button>
+      <button class="btn" id="histBtn" type="button" aria-label="Mood history"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 14h14v1.5H1zM2 9h2.5v4H2zm4-5h2.5v9H6zm4 3h2.5v6H10z"/></svg><span class="lbl">History</span></button>
       <a class="btn" id="econBtn" href="economy.html" style="text-decoration:none">Economy &rsaquo;</a>
       <button class="btn" id="helpBtn" type="button" aria-label="How to read it"><span aria-hidden="true">?</span><span class="lbl">How to read it</span></button>
       <button class="btn" id="fsBtn" type="button" aria-label="Full screen"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1h5v2H3v3H1zm9 0h5v5h-2V3h-3zM1 10h2v3h3v2H1zm12 0h2v5h-5v-2h3z"/></svg></button>
@@ -322,6 +354,18 @@
     <div class="readouts" id="readouts"></div>
   </footer>
 </div>
+
+<dialog id="hist" aria-labelledby="histTitle">
+  <h2 id="histTitle">Mood history</h2>
+  <div class="hTabs" role="tablist" aria-label="Period">
+    <button class="btn opt" type="button" role="tab" data-range="7">7D</button><button class="btn opt" type="button" role="tab" data-range="30">30D</button><button class="btn opt" type="button" role="tab" data-range="90">90D</button><button class="btn opt" type="button" role="tab" data-range="180">180D</button><button class="btn opt" type="button" role="tab" data-range="365">1Y</button>
+  </div>
+  <div class="hSum num" id="hSum"></div>
+  <div id="hBody"></div>
+  <div class="hDay" id="hDay" aria-live="polite"></div>
+  <p class="src">Each day's mood is the average close-to-close move of the Dow, S&amp;P 500, Nasdaq and Russell 2000, named the same way as the lamp: Fearful below −1%, Uneasy to −0.3%, Calm to +0.3%, Buoyant to +1%, Euphoric above. Trading days only. While the market is open, today's figure is the latest delayed price.</p>
+  <button class="btn close" id="histClose" type="button">Close</button>
+</dialog>
 
 <dialog id="help" aria-labelledby="helpTitle">
   <h2 id="helpTitle">How to read it</h2>
@@ -512,6 +556,7 @@
       mode = newMode;
       if (mode === "live") pos = lastPos();
       buildDays();
+      if ($("hist").open) renderHist();   // a new fetch while the history is open: today's row moves with it
       if (firstLoad) initLanes();
       await loadEcon();
       if (gl && !inCell) { draw(); ui(); }   // place the labels against a drawn lamp on the very first paint
@@ -1342,6 +1387,103 @@
   // keyboard access untouched (the Close button still gets focus, just not the scroll).
   function openHelp() { const h = $("help"); h.showModal(); h.scrollTop = 0; }
   $("helpBtn").onclick = openHelp;
+
+  // ---------- mood history ----------
+  // one row per trading day from each index's `daily` closes (Mood.moodHistory); a tab picks the period in
+  // calendar days back from the newest day. The week shows tiles; longer periods one bar per day + a rolling mean.
+  let histRange = 7, histSel = null;
+  const IX_SHORT = ["Dow", "S&P", "Nasdaq", "Russell"];
+  const sgn = (v, dg = 2) => (v > 0 ? "+" : v < 0 ? "\u2212" : "") + Math.abs(v).toFixed(dg) + "%";
+  const moodInk = pct => hex(Mood.colour(pct).map(v => v * 0.35 + 0.65));
+  function histRows() {
+    const all = data ? Mood.moodHistory(data.indexes) : [];
+    if (!all.length) return { all, rows: [] };
+    const end = new Date(all[all.length - 1].date + "T12:00:00Z"); end.setUTCDate(end.getUTCDate() - histRange);
+    const cut = end.toISOString().slice(0, 10);
+    return { all, rows: all.filter(r => r.date > cut) };
+  }
+  function renderHist() {
+    document.querySelectorAll("#hist [data-range]").forEach(b => { const on = +b.dataset.range === histRange; b.setAttribute("aria-pressed", on); b.setAttribute("aria-selected", on); });
+    const { all, rows } = histRows(), body = $("hBody"), sum = $("hSum");
+    body.textContent = ""; sum.textContent = "";
+    if (!rows.length) {
+      body.innerHTML = `<div class="hEmpty">${data ? "No daily history in the data yet: it arrives with the next data update." : "Loading market data…"}</div>`;
+      $("hDay").textContent = ""; return;
+    }
+    if (!rows.some(r => r.date === histSel)) histSel = rows[rows.length - 1].date;
+    // the period: how often each mood, and how far the four moved together (each index's close at the end vs before the period)
+    const counts = {}; rows.forEach(r => counts[r.word] = (counts[r.word] || 0) + 1);
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    const k0 = all.indexOf(rows[0]), first = all[k0 - 1] ? all[k0 - 1].date : null;
+    const span = first && data.indexes.map(ix => { const m = new Map(ix.daily); return (m.get(rows[rows.length - 1].date) / m.get(first) - 1) * 100; });
+    const net = span && span.reduce((a, v) => a + v, 0) / span.length;
+    const short = k0 === 0 ? ` · the data starts ${dayLabel(rows[0].date, { month: "short", day: "numeric", year: "numeric" })}` : "";   // the period reaches past the oldest day on file
+    sum.innerHTML = `${rows.length} trading day${rows.length > 1 ? "s" : ""} · most often <b style="color:${moodInk(rows.find(r => r.word === top[0]).pct)}">${top[0]}</b> (${top[1]})` +
+      (net != null ? ` · the four together <b style="color:${moodInk(net)}">${sgn(net, 1)}</b>` : "") + short;
+    if (histRange === 7) {
+      const g = document.createElement("div"); g.className = "hTiles"; g.setAttribute("role", "group"); g.setAttribute("aria-label", "Days of the past week");
+      rows.forEach(r => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "hTile"; b.style.setProperty("--c", moodInk(r.pct));
+        b.setAttribute("aria-pressed", r.date === histSel);
+        b.innerHTML = `<div class="d">${dayLabel(r.date, { weekday: "short", month: "short", day: "numeric" })}</div><div class="w">${r.word}</div><div class="p num">${sgn(r.pct)}</div>`;
+        b.onclick = () => { histSel = r.date; renderHist(); };
+        g.appendChild(b);
+      });
+      body.appendChild(g);
+    } else body.appendChild(histChart(rows));
+    histDay(all.find(r => r.date === histSel));
+  }
+  function histChart(rows) {
+    const W = 600, H = 190, L = 34, R = 6, T = 8, B = 20, n = rows.length, w = (W - L - R) / n;
+    const top = Math.max(1, Math.ceil(Math.max(...rows.map(r => Math.abs(r.pct))) * 2) / 2);   // symmetric, in 0.5% steps, never under 1%
+    const y = v => T + (H - T - B) / 2 * (1 - v / top), x = k => L + w * k + w / 2;
+    const win = histRange <= 30 ? 5 : histRange <= 90 ? 10 : 20;
+    const avg = rows.map((_, k) => { const s = rows.slice(Math.max(0, k - win + 1), k + 1); return s.reduce((a, r) => a + r.pct, 0) / s.length; });
+    const NS = "http://www.w3.org/2000/svg", el = (tag, at) => { const e = document.createElementNS(NS, tag); for (const a in at) e.setAttribute(a, at[a]); return e; };
+    const svg = el("svg", { class: "hChart", viewBox: `0 0 ${W} ${H}`, tabindex: 0, role: "img",
+      "aria-label": `Daily mood, ${n} trading days. Left and right arrows step through the days.` });
+    const sel = el("rect", { class: "sel", y: T, height: H - T - B, width: Math.max(w, 3) }); svg.appendChild(sel);
+    [top, 1, 0, -1, -top].filter((v, i, a) => a.indexOf(v) === i).forEach(v => {
+      svg.appendChild(el("line", { class: v ? "g" : "z", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+      const t = el("text", { x: L - 5, y: y(v) + 3.5, "text-anchor": "end" }); t.textContent = v ? sgn(v, v % 1 ? 1 : 0) : "0"; svg.appendChild(t);
+    });
+    rows.forEach((r, k) => svg.appendChild(el("rect", { x: x(k) - Math.max(w * 0.36, 0.5), width: Math.max(w * 0.72, 1),
+      y: Math.min(y(0), y(r.pct)), height: Math.max(Math.abs(y(r.pct) - y(0)), 1), fill: moodInk(r.pct), rx: w > 6 ? 1.5 : 0 })));
+    svg.appendChild(el("polyline", { class: "avg", points: avg.map((v, k) => x(k).toFixed(1) + "," + y(v).toFixed(1)).join(" ") }));
+    // month ticks along the bottom (first trading day of each month); every other one past 90 days
+    let shown = 0;
+    rows.forEach((r, k) => { if (k && r.date.slice(5, 7) === rows[k - 1].date.slice(5, 7)) return;
+      if (k && histRange > 90 && shown++ % 2) return;
+      const t = el("text", { x: x(k), y: H - 5, "text-anchor": k ? "middle" : "start" }); t.textContent = dayLabel(r.date, { month: "short" }); svg.appendChild(t); });
+    const place = () => { const k = rows.findIndex(r => r.date === histSel); sel.setAttribute("x", x(k) - Math.max(w, 3) / 2); };
+    const pick = e => { const b = svg.getBoundingClientRect(), k = Math.round(((e.clientX - b.left) / b.width * W - L - w / 2) / w);
+      const r = rows[Math.max(0, Math.min(n - 1, k))]; if (r.date !== histSel) { histSel = r.date; place(); histDay(r); } };
+    svg.addEventListener("pointermove", pick); svg.addEventListener("pointerdown", pick);
+    svg.addEventListener("keydown", e => { const d = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0; if (!d) return; e.preventDefault();
+      const k = Math.max(0, Math.min(n - 1, rows.findIndex(r => r.date === histSel) + d)); histSel = rows[k].date; place(); histDay(rows[k]); });
+    place();
+    const wrap = document.createElement("div"); wrap.appendChild(svg);
+    const key = document.createElement("div"); key.className = "hKey";
+    key.innerHTML = `<span>bar = one day's mood (its average move)</span><span>line = ${win}-day average</span>`;
+    wrap.appendChild(key); return wrap;
+  }
+  function histDay(r) {
+    const box = $("hDay"); if (!r) { box.textContent = ""; return; }
+    const today = data && r.date === data.indexes[0].session_date && mode === "live";
+    box.innerHTML = `<div class="t">${dayLabel(r.date, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}${today ? " · so far today" : ""}</div>
+      <div class="w" style="color:${moodInk(r.pct)}">${r.word}<span class="num">${sgn(r.pct)}</span></div>
+      <div class="ix num">${r.each.map((v, i) => `<div>${IX_SHORT[i]}<b style="color:${moodInk(v)}">${sgn(v)}</b></div>`).join("")}</div>`;
+    // the lamp can replay the days it has 5-minute bars for, while the market is closed
+    if (mode === "replay" && days.includes(r.date)) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.textContent = "Replay this day on the lamp \u203a";
+      b.onclick = () => { useDay(r.date); pos = 0; hold = 0; buildDays(); step(0); ui(); $("hist").close(); };
+      box.appendChild(b);
+    }
+  }
+  function openHist() { histSel = null; renderHist(); const h = $("hist"); if (!h.open) h.showModal(); h.scrollTop = 0; }
+  $("histBtn").onclick = openHist;
+  $("histClose").onclick = () => $("hist").close();
+  document.querySelectorAll("#hist [data-range]").forEach(b => b.onclick = () => { histRange = +b.dataset.range; renderHist(); });
   $("helpClose").onclick = () => $("help").close();
   $("fsBtn").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
   $("fsBtn").hidden = !document.documentElement.requestFullscreen;   // iPhone Safari has no page fullscreen: no dead button
@@ -1414,6 +1556,7 @@
   setInterval(loadEcon, REFRESH_MS);   // economy.json has its own cron: refresh it even when market.json has not changed
   requestAnimationFrame(frame);
   if (/(^#|&)help(&|$)/.test(location.hash)) openHelp();   // #help: for browser-check.sh only
+  { const m = /(?:^#|&)hist(?:=(\d+))?(?:&|$)/.exec(location.hash); if (m) { if (m[1]) histRange = +m[1]; openHist(); } }   // #hist=30: a link straight to a period
   window.__mm = { get mode() { return mode; }, get pos() { return pos; }, lanes, get data() { return data; }, gl: !!gl,
                   get inCell() { return inCell; }, cellNodes,
                   blobXY(key) { const H = innerHeight, L = lanes.concat(econ).find((l, i) => (data.indexes[i] ? data.indexes[i].key : l.key) === key);   // browser checks: where a blob is NOW, in client px

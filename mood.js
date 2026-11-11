@@ -138,6 +138,18 @@
     return Array.from({ length: n }, (_, k) => indexes.reduce((a, ix) => a + (ix.bars[k][1] / ix.prev_close - 1) * 100, 0) / indexes.length);
   }
 
+  // the mood history: one row per trading day all four indexes share, oldest first — each index's move from
+  // ITS previous daily close, the mood = moodWord of their mean (the same rule the lamp's word uses today).
+  // A day with no prior close for some index is left out, never guessed. [] when no index carries `daily`.
+  function moodHistory(indexes) {
+    const moves = indexes.map(ix => { const m = new Map(), d = ix.daily || [];
+      for (let k = 1; k < d.length; k++) m.set(d[k][0], (d[k][1] / d[k - 1][1] - 1) * 100); return m; });
+    return [...moves[0].keys()].filter(dt => moves.every(m => m.has(dt))).sort().map(date => {
+      const each = moves.map(m => m.get(date)), pct = each.reduce((a, v) => a + v, 0) / each.length;
+      return { date, pct, word: moodWord(pct), each };
+    });
+  }
+
   // short tags for phone width — whole words, never a slice (a sliced tag reads as "Eng")
   const SECTOR_SHORT = { "Information Technology": "Tech", "Consumer Discretionary": "Cons. Disc.",
     "Consumer Staples": "Staples", "Communication Services": "Comm.", "Health Care": "Health", "Real Estate": "Real Est." };
@@ -242,7 +254,7 @@
 
   const api = { colour, labelTint, dodge, height, size, choppiness, speed, chopWord, moodWord, marketState, priceAt,
                 against, radii, movePct, heightIn, TYPICAL_5M, normSector, sectorRank, SECTOR_ORDER,
-                fear, fearWord, volumeLevel, pulseAmp, volumeWord, avgSeries, sectorHue, sectorShort, scrubPos,
+                fear, fearWord, volumeLevel, pulseAmp, volumeWord, avgSeries, moodHistory, sectorHue, sectorShort, scrubPos,
                 econMove, econChop, econSlow, econGroupPct, econAsOf };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Mood = api;
 })(this);
