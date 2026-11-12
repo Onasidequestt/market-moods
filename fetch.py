@@ -306,9 +306,22 @@ def econ_open(now=None):
     n = (now or datetime.now(ET)).astimezone(ET); w, hm = n.weekday(), (n.hour, n.minute)   # Mon=0 .. Sun=6
     return not (w == 5 or (w == 4 and hm >= (17, 0)) or (w == 6 and hm < (18, 0)))
 
-def build_companies(market, index="sp500"):
+def cached_roster(prev):
+    """Pure: ([(symbol, name, sector)], precap) from the last companies file this index wrote.
+    ponytail: membership freezes at roster_at while the source refuses (nasdaq.com 403s GitHub's runners
+    since 11-06); prices stay live. Upgrade path: a roster source that serves cloud IPs."""
+    return [(c["s"], c["n"], c["sec"]) for c in prev["companies"]], {c["s"]: c["cap"] or 0 for c in prev["companies"]}
+
+def build_companies(market, index="sp500", prev=None):
     ix = next(i for i in market["indexes"] if i["key"] == index)
-    members, precap = ROSTERS[index]()
+    roster_at = int(time.time())
+    try: members, precap = ROSTERS[index]()
+    except urllib.error.HTTPError as e:
+        # the member list changes rarely and prices come from Yahoo: a refused roster must not freeze the prices too
+        if not prev or not prev.get("companies"): raise
+        print(f"{index}: roster refused ({e}), reusing the member list from the last good file", file=sys.stderr)
+        members, precap = cached_roster(prev)
+        roster_at = prev.get("roster_at") or prev["generated_at"]
     cap_n = INDEX_CAP[index]
     if precap is not None and len(members) > cap_n:
         # rank by the free precap first so we only spend Yahoo calls (caps + spark) on the ones we'll show
@@ -319,7 +332,10 @@ def build_companies(market, index="sp500"):
     have = sum(1 for x in data["sessions"][-1]["m"] if x)
     if have < MIN_PRICED[index]:
         raise ValueError(f"{index}: only {have} companies priced on {data['sessions'][-1]['date']}")
-    data.update(generated_at=int(time.time()), source=SOURCE_NOTE[index])
+    note = SOURCE_NOTE[index]
+    if roster_at < time.time() - 3600:
+        note += f" (member list as of {datetime.fromtimestamp(roster_at, timezone.utc):%Y-%m-%d}: its source refused the latest fetch)"
+    data.update(generated_at=int(time.time()), roster_at=roster_at, source=note)
     return data
 
 # ---------- economy: grouped blobs for commodities, rates and the slow macro numbers ----------
@@ -727,6 +743,9 @@ def selfcheck():
     assert c3["index"] == "dow", c3["index"]
     # INDEX_CAP/ranking: nasdaq/russell trim to top N by precap BEFORE spending HTTP calls on prices
     assert INDEX_CAP == {"dow": 30, "sp500": 500, "nasdaq": 500, "russell": 500}, INDEX_CAP
+    # a refused roster falls back to the last file's members; a cap of None ranks last, not a crash
+    cm, cp = cached_roster({"companies": [{"s": "AAA", "n": "Ay", "sec": "Y", "cap": 2e12}, {"s": "BBB", "n": "Be", "sec": "Z", "cap": None}]})
+    assert cm == [("AAA", "Ay", "Y"), ("BBB", "Be", "Z")] and cp == {"AAA": 2e12, "BBB": 0}, (cm, cp)
     # sector labels: normalised once for every roster (nasdaq's short names join the GICS ones)
     assert norm_sector("Technology") == "Information Technology", norm_sector("Technology")
     assert norm_sector("Finance") == "Financials" and norm_sector("") == "Other", norm_sector("Finance")
@@ -824,7 +843,9 @@ if __name__ == "__main__":
         i = sys.argv.index("--companies")
         key = sys.argv[i + 1] if len(sys.argv) > i + 1 and sys.argv[i + 1] in ROSTERS else "sp500"
         fname = "companies.json" if key == "sp500" else f"companies-{key}.json"   # sp500 URL unchanged
-        data = build_companies(json.loads((here / "market.json").read_text()), key)
+        try: prev = json.loads((here / fname).read_text())
+        except Exception: prev = None
+        data = build_companies(json.loads((here / "market.json").read_text()), key, prev)
         (here / fname).write_text(json.dumps(data, separators=(",", ":")) + "\n")
         m = json.loads((here / "market.json").read_text())   # the market file's door list must not lag a file this round just wrote
         if m.get("companies") != companies_on_disk(here):
